@@ -1,0 +1,157 @@
+#!/bin/bash
+# ChromeOS GPT helpers, shared by every script that writes a bootable disk:
+#   write-sd.sh      writes a card from the built rootfs
+#   install-emmc.sh  writes the internal storage from the running system
+#   install-kpart.sh rewrites only the kernel partition of the running system
+#
+# Sourced after scripts/lib.sh, which provides die()/log()/warn() and the
+# geometry (KPART_START_SECTORS, KPART_SIZE_SECTORS, BOOT_SIZE_MIB, BOOT_FS).
+#
+# The layout is Nura's (and pmbootstrap's), reproduced deliberately:
+#   p1  kernel  128 MiB  (pmOS_kernel)  ChromeOS kernel partition: the signed kpart
+#   p2  boot    512 MiB  (pmOS_boot)    the kernel, initramfs and DTBs
+#   p3  root    the rest (pmOS_root)    the root filesystem
+# depthcharge only reads p1 - it loads the kpart, which is self-contained - but
+# /boot is kept separate exactly as Nura has it, so the two installations on
+# this machine look the same and the eMMC is a faithful copy of the tested card.
+#
+# Ported from debian-aarch64 (docs/plan.md §2.5). The logic is unchanged; only
+# the package that provides futility differs (Arch: `vboot-utils`).
+
+# Release a disk and its partitions: drop mounts and swap, then stale signatures
+# (cgpt trips over leftover GPT headers otherwise). Both naming schemes are
+# covered: mmcblk1p1 and sda1.
+disk_release() {
+	_disk="$1"
+	for _part in "$_disk" "$_disk"p* "$_disk"[0-9]*; do
+		[ -b "$_part" ] || continue
+		swapoff "$_part" 2>/dev/null || true
+		mountpoint -q "$_part" 2>/dev/null && umount "$_part" || true
+		wipefs -a "$_part" >/dev/null 2>&1 || true
+	done
+}
+
+# Create the ChromeOS GPT on <disk> and set the derived geometry in the
+# variables BOOT_START/BOOT_SIZE/ROOT_START/ROOT_SIZE (in 512-byte sectors).
+#
+# cgpt pitfalls, all of them observed on this device:
+#  * 'cgpt create -z' zeroes the GPT areas *after* writing them, so the next
+#    'cgpt add' fails with GPT_ERROR_INVALID_HEADERS. Do not use -z.
+#  * cgpt does not write a protective MBR, and the Linux kernel refuses to
+#    parse a GPT without one (0xAA55 plus a 0xEE entry), so parted creates the
+#    table first and cgpt writes the ChromeOS entries on top of it.
+# The kernel partition flags (-S 1 -T 5 -P 10) are the ones pmbootstrap sets in
+# pmb/install/partition.py: successful, 5 tries, priority 10.
+disk_layout_create() {
+	_disk="$1"
+	TOTAL="$(blockdev --getsz "$_disk")"
+	BOOT_START=$((KPART_START_SECTORS + KPART_SIZE_SECTORS))
+	BOOT_SIZE=$((BOOT_SIZE_MIB * 2048))
+	ROOT_START=$((BOOT_START + BOOT_SIZE))
+	ROOT_SIZE=$((TOTAL - ROOT_START - 2048))
+	[ "$ROOT_SIZE" -gt 1048576 ] ||
+		die "device too small for a root filesystem: $_disk ($(blockdev --getsize64 "$_disk") bytes)"
+
+	dd if=/dev/zero of="$_disk" bs=512 count=34 conv=fsync 2>/dev/null
+	dd if=/dev/zero of="$_disk" bs=512 seek=$((TOTAL - 33)) count=33 conv=fsync 2>/dev/null
+	parted -s "$_disk" mktable gpt
+	cgpt create "$_disk"
+	cgpt add -i 1 -b "$KPART_START_SECTORS" -s "$KPART_SIZE_SECTORS" -t kernel -l pmOS_kernel \
+		-S 1 -T 5 -P 10 "$_disk"
+	cgpt add -i 2 -b "$BOOT_START" -s "$BOOT_SIZE" -t efi -l pmOS_boot "$_disk"
+	cgpt add -i 3 -b "$ROOT_START" -s "$ROOT_SIZE" -t data -l pmOS_root "$_disk"
+	# Make the kernel pick up the new table (partx avoids BLKRRPART's EBUSY).
+	partx -d "$_disk" 2>/dev/null || true
+	partx -a "$_disk" 2>/dev/null || blockdev --rereadpt "$_disk" 2>/dev/null || true
+	command -v udevadm >/dev/null && udevadm settle || sleep 2
+}
+
+# Resolve the partition devices into KPART_PART/BOOT_PART/ROOT_PART.
+# lsblk lists the whole device first, then its partitions: skip the disk line.
+# Resolving the whole disk by mistake would format it, so bail out if the
+# result equals the disk itself.
+disk_layout_parts() {
+	_disk="$1"
+	KPART_PART="$(lsblk -nro PATH "$_disk" | sed -n '2p')"
+	BOOT_PART="$(lsblk -nro PATH "$_disk" | sed -n '3p')"
+	ROOT_PART="$(lsblk -nro PATH "$_disk" | sed -n '4p')"
+	[ -n "$KPART_PART" ] && [ -n "$BOOT_PART" ] && [ -n "$ROOT_PART" ] ||
+		die "could not resolve partitions on $_disk"
+	for _p in "$KPART_PART" "$BOOT_PART" "$ROOT_PART"; do
+		[ "$_p" != "$_disk" ] ||
+			die "refusing to operate on the whole disk; partition resolution failed for $_disk"
+	done
+}
+
+# Format and mount the boot and root partitions into <mountpoint>.
+# Sets BOOT_UUID and ROOT_UUID. Unmount with disk_layout_umount.
+disk_layout_mount() {
+	_disk="$1" _mnt="$2"
+	log "Formatting $BOOT_PART ($BOOT_FS, label pmOS_boot)"
+	command -v "mkfs.$BOOT_FS" >/dev/null ||
+		die "no mkfs.$BOOT_FS on this system; set BOOT_FS to a filesystem it can create"
+	"mkfs.$BOOT_FS" -F -L pmOS_boot "$BOOT_PART" >/dev/null
+	BOOT_UUID="$(blkid -s UUID -o value "$BOOT_PART")"
+	log "Formatting $ROOT_PART (ext4, label pmOS_root)"
+	mkfs.ext4 -F -L pmOS_root "$ROOT_PART" >/dev/null
+	ROOT_UUID="$(blkid -s UUID -o value "$ROOT_PART")"
+	[ -n "$BOOT_UUID" ] && [ -n "$ROOT_UUID" ] || die "could not read partition UUIDs on $_disk"
+	log "Root UUID: $ROOT_UUID"
+
+	mkdir -p "$_mnt"
+	mount "$ROOT_PART" "$_mnt"
+	mkdir -p "$_mnt/boot"
+	mount "$BOOT_PART" "$_mnt/boot"
+}
+
+disk_layout_umount() {
+	_mnt="$1"
+	mountpoint -q "$_mnt/boot" && umount "$_mnt/boot" || true
+	mountpoint -q "$_mnt" && umount "$_mnt" || true
+}
+
+# /etc/fstab for the layout above (both filesystems, by UUID).
+disk_layout_fstab() {
+	_mnt="$1"
+	cat >"$_mnt/etc/fstab" <<EOF
+UUID=$ROOT_UUID	/	ext4	defaults,noatime,errors=remount-ro	0 1
+UUID=$BOOT_UUID	/boot	$BOOT_FS	defaults,noatime	0 2
+EOF
+}
+
+# The kernel partition is 128 MiB; refuse to write an image that does not fit,
+# as boot-deploy does (check_image_size in boot-deploy-functions.sh).
+kpart_fits() {
+	_img="$1" _part="$2"
+	_img_size="$(stat -c %s "$_img")"
+	_part_size="$(blockdev --getsize64 "$_part")"
+	[ "$_img_size" -le "$_part_size" ] ||
+		die "the kpart ($_img_size bytes) does not fit in $_part ($_part_size bytes)"
+	log "kpart $((_img_size / 1024 / 1024)) MiB fits in $_part ($((_part_size / 1024 / 1024)) MiB)"
+}
+
+# Verify the signed FIT when futility is available (Arch package `vboot-utils`,
+# which provides cgpt, crossystem and futility together). It reads the partition
+# or the image file directly.
+kpart_verify() {
+	_img="$1"
+	if ! command -v futility >/dev/null 2>&1; then
+		warn "futility not installed (vboot-utils): skipping kpart verification"
+		return 0
+	fi
+	if ! _out="$(futility show "$_img" 2>/dev/null)"; then
+		die "futility rejected the kpart: $_img"
+	fi
+	_ver="$(printf '%s\n' "$_out" | sed -n 's/^ *Header version: *//p' | head -1)"
+	# Not `printf ... | grep -q`: with `pipefail` the SIGPIPE grep causes when it
+	# exits on the match can make the pipeline report failure (the same pitfall is
+	# documented in scripts/check-system.sh).
+	case "$_out" in
+		*'Body verification succeeded'*)
+			log "futility: dev-signed FIT, preamble ${_ver:-?}, body verification succeeded"
+			;;
+		*)
+			die "futility could not verify the kpart body: $_img"
+			;;
+	esac
+}

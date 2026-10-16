@@ -176,14 +176,21 @@ and missing fails the build. It is invoked as `filter_aarch64_packages <kernel> 
   hooks are what had to be disabled** in `debian-aarch64`; the AUR recipe installs only the Python
   package, so it appears to ship no `/etc/kernel/postinst.d` hooks — **still to confirm after a
   native build**, and disabled if present.
-- **`vboot-utils` 154.16805-1**: `arch=(i686 x86_64)` — **x86-only in the recipe**, so a native
-  aarch64 build needs `makepkg --ignorearch` (or a patched `arch=`) and `depends=(acpica cbfstool
-  chromeos-flashrom-git libutil-linux libzip openssl)`. The PKGBUILD explicitly installs
-  `/usr/share/vboot/devkeys` (copied from `tests/devkeys`), and `make install MINIMAL=1` ships
-  `futility`. **Confirm both after building.** This is the one AUR dependency (`chromeos-flashrom-git`)
-  that may itself need a native build.
-- **`vboot-kernel-utils` is not in the AUR** — on Arch, `futility` and the devkeys come from
-  `vboot-utils`, unlike Debian where `cgpt` and `futility` are separate packages.
+- **`vboot-utils`** exists in two places and they are not equivalent:
+  - **Arch Linux ARM's `alarm` repo** (not the AUR): `vboot-utils r2729.10343b821-1`, package file
+    `*.pkg.tar.xz` (not `.zst`). Downloaded and listed: it installs `usr/bin/cgpt`,
+    `usr/bin/crossystem`, `usr/bin/futility`, `vbutil_*`, and `provides = cgpt`. It ships **no
+    `/usr/share/vboot/devkeys`** — so the keys must be vendored (`boot/devkeys/`, plan §4).
+  - **AUR `vboot-utils` 154.16805-1**: `arch=(i686 x86_64)`, builds vboot from source, and its
+    PKGBUILD does install `/usr/share/vboot/devkeys`. It is x86-only in the recipe; a native aarch64
+    build would need `makepkg --ignorearch`. Prefer the ALARM package and vendor the keys.
+- **`vboot-kernel-utils` is not in the AUR.** On Arch, `cgpt` **and** `futility` both come from
+  `vboot-utils` (ALARM), unlike Debian where `cgpt` and `vboot-kernel-utils` are separate packages.
+- **`depthchargectl` key lookup** (`depthcharge-tools` cloned, HEAD `1c123c8`): search order is
+  `/etc/depthcharge-tools`, `/usr/share/vboot/devkeys`, `/usr/local/share/vboot/devkeys`; the names
+  it looks for are `kernel.keyblock`, `kernel_data_key.vbprivk`, `kernel_subkey.vbpubk`; it also
+  accepts `--keydir`, `--keyblock`, `--signprivate`, `--signpubkey`. `boot/make-kpart.sh` passes
+  `--keydir` when the vendored copy exists.
 
 Everything AUR-only that is needed on the device gets built once and published into the local
 `[platform]` bundle (`repo-add`), per plan §7.
@@ -191,6 +198,7 @@ Everything AUR-only that is needed on the device gets built once and published i
 ## Still open (need a chroot or hardware — not answerable read-only)
 
 1. Confirm the built `depthcharge-tools` installs no kernel/initramfs hooks on Arch (disable if it does).
-2. Confirm `vboot-utils` on aarch64 ships both `futility` and `/usr/share/vboot/devkeys`.
+2. Vendor the vboot developer keys into `boot/devkeys/` (`tests/devkeys` from the pinned
+   vboot_reference revision) and confirm a signed kpart verifies with `futility show`.
 3. `pacman -U` / `mkinitcpio` behavior inside the Phase 1/2 chroot.
 4. Whether LUKS is wanted later (plan §8) and whether the SD card must self-install to eMMC (assumed yes).

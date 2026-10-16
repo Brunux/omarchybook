@@ -218,13 +218,14 @@ omarchybook/
   packages/                   base.list (ALARM), omarchy.list (edge/aarch64),
                               aarch64-filter.list (x86-only drops and substitutions)
   boot/                       lib-cgpt.sh, make-kpart.sh, the pacman hook that rewrites p1,
-                              depthcharge devkeys if the AUR package does not carry them
+                              depthcharge devkeys (the ALARM vboot-utils carries none);
+                              the canonical boot-chain copy, consumed by scripts/
   upstream/omarchy/           patches/series plus 0001-aarch64-google.patch (the proposal)
   scripts/                    00-deps.sh, build-kernel.sh, build-rootfs.sh, install-kernel.sh,
-                              make-kpart.sh, write-sd.sh, make-image.sh, make-release.sh,
+                              write-sd.sh, make-image.sh, make-release.sh,
                               install-emmc.sh, install-kpart.sh, backup-system.sh,
                               restore-system.sh, check-system.sh,
-                              lib.sh, lib-cgpt.sh, lib-dist.sh
+                              lib.sh, lib-dist.sh
   docs/                       plan.md, recon.md, upstream.md, releases/<version>.md
   reports/                    check-system.sh output captured on real hardware
 ```
@@ -422,7 +423,7 @@ applied by `build-rootfs.sh`. The patch *is* the proposal, so the two cannot dri
 | 4 GB RAM, Quickshell plus Hyprland on Mali-G57 | 1920×1200 at scale 1 should be comfortable; measure, and if needed trim the shell's heavier pieces rather than the compositor |
 | `chromium` on ARM (a known weak spot) | `brave-bin` **is** published for aarch64; keep Chromium optional |
 | `omarchy update` pulling `linux-omarchy` back in | `provides`/`conflicts`, `IgnorePkg` and the hook; verify after an update in Phase 7 |
-| AUR-only build tooling (`depthcharge-tools`, `vboot-utils`) and possibly missing devkeys | Build them natively once and publish them into our `[platform]` bundle; vendor the devkeys if the package does not carry them |
+| AUR/ALARM build tooling (`depthcharge-tools` in AUR, `vboot-utils` in ALARM) and missing devkeys | `vboot-utils` (ALARM `alarm` repo) provides `cgpt`+`crossystem`+`futility` but **no keys**: vendor `boot/devkeys/`. `depthcharge-tools` is an AUR `arch=any` Python package. Build/publish both into our `[platform]` bundle |
 | `depthcharge-tools` system hooks guessing a kernel partition inside a chroot | Disable them exactly as the Debian port does, and rely on our own explicit hook |
 | No LUKS, therefore no factory-reset or re-key path | Declared a non-goal; revisit only if the kpart command line and initramfs can unlock it cleanly |
 | Omarchy assumes a keyboard with Super and F-keys; its `fix-fkeys.sh` only sets `hid_apple fnmode=2` | Our keyd configuration in the platform leaf; `Search` already is Super on this machine |

@@ -6,6 +6,11 @@
 build/
 out/
 
+# Editor swap/backup files.
+*.swp
+*.swo
+*~
+
 # Arch/pacman build output (makepkg runs in place, e.g. kernels/<flavor>/).
 pkg/
 src/
