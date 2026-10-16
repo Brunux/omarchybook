@@ -1,0 +1,247 @@
+# Maintainer: omarchybook
+# Arch Linux ARM kernel package for the Google Hayato Chromebook (MediaTek
+# MT8192). Modelled on omarchy-pkgs' linux-omarchy-bore, adapted to aarch64,
+# to the vendored kernel (version + patches/ + config.aarch64) and to Arch
+# Linux ARM. See docs/plan.md §3 (naming) and Phase 1.
+#
+# Builds mainline linux-<version> with the patches listed in patches/series,
+# in series order, using clang/lld (LLVM=1), the invocation proven in
+# debian-aarch64.
+#
+# The kernel release stays <version><CONFIG_LOCALVERSION> (e.g. 7.2.7-mt81);
+# pkgrel is deliberately NOT part of it, so a package rebuild does not move the
+# kernel path that the signed kpart and the mkinitcpio preset point at. That is
+# the release scripts/lib.sh computes (KERNEL_RELEASE).
+
+pkgbase=linux-omarchy-book
+pkgname=("$pkgbase" "$pkgbase-headers")
+# The repo's `version` file, read from the PKGBUILD's own directory when
+# makepkg sources it (not the kernel's generated `version`, which lives in
+# $_srcname and is read by the package functions).
+pkgver=$(<version)
+pkgrel=1
+pkgdesc='Linux for the Google Hayato Chromebook (MediaTek MT8192, Omarchy)'
+url='https://omarchy.org'
+arch=(aarch64)
+license=(GPL-2.0-only)
+makedepends=(
+  bc
+  clang
+  cpio
+  findutils
+  gettext
+  libelf
+  lld
+  llvm
+  openssl
+  pahole
+  perl
+  python
+  rust
+  rust-bindgen
+  rust-src
+  tar
+  xz
+  zlib
+  zstd
+)
+options=(!debug !strip)
+
+_major=${pkgver%%.*}
+_srcname=linux-${pkgver}
+
+# The kernel patches are applied in this order (patches/series). Keeping the
+# order here rather than relying on a glob is deliberate: the series order is
+# not alphabetical.
+source=(
+  "https://cdn.kernel.org/pub/linux/kernel/v${_major}.x/${_srcname}.tar.xz"
+  config.aarch64
+  patches/mt8183-fix-bluetooth.patch
+  patches/mt8186-enable-dpi.patch
+  patches/mt8186-ASoC-hdmi-codec-Add-event-handler-for-hdmi-TX.patch
+  patches/mt8186-SoC-mediatek-mt8186-correct-the-HDMI-widgets.patch
+  patches/mt8186-drm-bridge-it6505-Add-audio-support.patch
+  patches/mt8186-ASoC-mediatek-mt8186-make-FE-nonatomic-and-no_pcm.patch
+  patches/mtk-pmdomain.patch
+)
+sha256sums=(
+  'SKIP'
+  '0e4e548897de1b1b1874bb24070d1854d95369d8370a7f95af35ad8c6e711ee3'
+  '3a8e77c5e3f6a5918f0952ef0cb5b1090ea895ff0dc45e9b139a2d6881e60a51'
+  'dc1b266668e8606ddabca87dc7565cb7a5eb0a6affed4cb98b1189056a39bc39'
+  '8e0d875238c0452db3c8b62207dc385e5dcc0d3bd745e7c6722cb082981256df'
+  '36b946d548d591626bcc7498c2fd8c4996386c48cea59654d52b884030219aaf'
+  '3f3591e3ffa2d7c8c4f0355b281fb79789ecd69fe98615d4a626c08cdd557601'
+  'bf84a43a070d2e1155a59137d276058b76f530916f90896a90698862849b1c70'
+  '11cec3a04c71964563052820f6964d9a0457ffe5fcda593267f1226512cd3169'
+)
+
+# The kernel tarball signature is not verified yet (sha256sums is SKIP for it);
+# add kernel.org's keys to validpgpkeys and the .sign source before release.
+export KBUILD_BUILD_HOST=omarchybook
+export KBUILD_BUILD_USER=$pkgbase
+export KBUILD_BUILD_TIMESTAMP="$(date -Ru${SOURCE_DATE_EPOCH:+d @$SOURCE_DATE_EPOCH})"
+# Build with clang/lld, the toolchain proven on this machine.
+export LLVM=1
+
+prepare() {
+  cd $_srcname
+
+  local src
+  for src in "${source[@]}"; do
+    src="${src%%::*}"
+    src="${src##*/}"
+    src="${src%.zst}"
+    [[ $src = *.patch ]] || continue
+    echo "Applying patch $src..."
+    patch -Np1 --fuzz=0 < "../$src"
+  done
+
+  echo "Setting config..."
+  cp ../config.aarch64 .config
+  make olddefconfig
+  diff -u ../config.aarch64 .config || :
+
+  make -s kernelrelease > version
+  echo "Prepared $pkgbase version $(<version)"
+}
+
+build() {
+  cd $_srcname
+  make all
+}
+
+_package() {
+  pkgdesc="$pkgdesc kernel and modules"
+  depends=(
+    coreutils
+    initramfs
+    kmod
+  )
+  optdepends=(
+    "$pkgbase-headers: headers and scripts for building modules"
+    'linux-firmware-mediatek: MediaTek SCP firmware'
+    'linux-firmware-realtek: RTW88 Wi-Fi and Bluetooth firmware'
+    'wireless-regdb: to set the correct wireless channels of your country'
+  )
+  provides=('linux' 'linux-omarchy')
+  conflicts=('linux-omarchy' 'linux-aarch64')
+
+  cd $_srcname
+  local kver; kver=$(<version)
+  local modulesdir="$pkgdir/usr/lib/modules/$kver"
+
+  echo "Installing boot image..."
+  # systemd finds the kernel here for hibernation.
+  install -Dm644 "$(make -s image_name)" "$modulesdir/vmlinuz"
+  # Used by mkinitcpio to name the kernel and find it via /usr/lib/modules/$kver.
+  echo "$pkgbase" | install -Dm644 /dev/stdin "$modulesdir/pkgbase"
+
+  echo "Installing the boot image the boot chain points at..."
+  install -Dm644 "$(make -s image_name)" "$pkgdir/boot/vmlinuz-$kver"
+
+  echo "Installing device trees..."
+  # DTBs land under /boot/dtbs; boot/make-kpart.sh globs them and depthcharge
+  # falls back to the first config, so the Hayato DTB must stay first.
+  make INSTALL_DTBS_PATH="$pkgdir/boot/dtbs" dtbs_install
+
+  echo "Installing modules..."
+  ZSTD_CLEVEL=19 make INSTALL_MOD_PATH="$pkgdir/usr" INSTALL_MOD_STRIP=1 \
+    DEPMOD=/doesnt/exist modules_install  # Suppress depmod
+  rm "$modulesdir"/build
+
+  echo "Installing the mkinitcpio preset..."
+  # The Arch kernel/initramfs names lib.sh expects: vmlinuz-<kver> and
+  # initramfs-<kver>.img (docs/plan.md Phase 1, not Debian's initrd.img-<kver>).
+  install -d "$pkgdir/etc/mkinitcpio.d"
+  cat > "$pkgdir/etc/mkinitcpio.d/$pkgbase.preset" <<EOF
+# mkinitcpio preset for $pkgbase ($kver).
+#
+# The image names match scripts/lib.sh (KERNEL_IMAGE_REL, INITRAMFS_REL).
+ALL_kver="/boot/vmlinuz-$kver"
+ALL_config="/etc/mkinitcpio.conf"
+PRESETS=('default' 'fallback')
+default_image="/boot/initramfs-$kver.img"
+fallback_image="/boot/initramfs-$kver-fallback.img"
+fallback_options="-S autodetect"
+EOF
+}
+
+_package-headers() {
+  pkgdesc="Headers and scripts for building modules for the $pkgdesc kernel"
+  depends=(
+    clang
+    lld
+    llvm
+    libelf
+    openssl
+    pahole
+    zlib
+    zstd
+  )
+  provides=('linux-headers' 'linux-omarchy-headers')
+  conflicts=('linux-omarchy-headers' 'linux-aarch64-headers')
+
+  cd $_srcname
+  local kver; kver=$(<version)
+  local builddir="$pkgdir/usr/lib/modules/$kver/build"
+
+  echo "Installing build files..."
+  install -Dt "$builddir" -m644 .config Makefile Module.symvers System.map \
+    localversion.* version vmlinux
+  install -Dt "$builddir/kernel" -m644 kernel/Makefile
+  install -Dt "$builddir/arch/arm64" -m644 arch/arm64/Makefile
+  cp -t "$builddir" -a scripts
+  ln -srt "$builddir" "$builddir/scripts/gdb/vmlinux-gdb.py"
+
+  if [[ $(scripts/config -s CONFIG_DEBUG_INFO_BTF_MODULES) = y ]]; then
+    install -Dt "$builddir/tools/bpf/resolve_btfids" tools/bpf/resolve_btfids/resolve_btfids
+  fi
+
+  echo "Installing headers..."
+  cp -t "$builddir" -a include
+  cp -t "$builddir/arch/arm64" -a arch/arm64/include
+  install -Dt "$builddir/arch/arm64/kernel" -m644 arch/arm64/kernel/asm-offsets.s
+
+  echo "Installing KConfig files..."
+  find . -name 'Kconfig*' -exec install -Dm644 {} "$builddir/{}" \;
+
+  if [[ $(scripts/config -s CONFIG_RUST) = y ]]; then
+    echo "Installing Rust files..."
+    install -Dt "$builddir/rust" -m644 rust/*.rmeta
+    install -Dt "$builddir/rust" rust/*.so
+  fi
+
+  echo "Installing unstripped VDSO..."
+  make INSTALL_MOD_PATH="$pkgdir/usr" vdso_install link=  # Suppress build-id symlinks
+
+  echo "Removing unneeded architectures..."
+  local arch
+  for arch in "$builddir"/arch/*/; do
+    [[ $arch = */arm64/ ]] && continue
+    echo "Removing $(basename "$arch")"
+    rm -r "$arch"
+  done
+
+  echo "Removing documentation..."
+  rm -r "$builddir/Documentation"
+
+  echo "Removing broken symlinks..."
+  find -L "$builddir" -type l -printf 'Removing %P\n' -delete
+
+  echo "Removing loose objects..."
+  find "$builddir" -type f -name '*.o' -printf 'Removing %P\n' -delete
+
+  echo "Adding symlink..."
+  mkdir -p "$pkgdir/usr/src"
+  ln -sr "$builddir" "$pkgdir/usr/src/$pkgbase"
+}
+
+for _p in "${pkgname[@]}"; do
+  eval "package_$_p() {
+    $(declare -f "_package${_p#$pkgbase}")
+    _package${_p#$pkgbase}
+  }"
+done
+
+# vim:set ts=8 sts=2 sw=2 et:
