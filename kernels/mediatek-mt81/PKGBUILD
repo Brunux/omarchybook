@@ -174,8 +174,10 @@ _package-headers() {
   local builddir="$pkgdir/usr/lib/modules/$kver/build"
 
   echo "Installing build files..."
+  # No localversion.* files: the release comes from CONFIG_LOCALVERSION alone
+  # (deliberately, so pkgrel/pkgname do not move the kernel path).
   install -Dt "$builddir" -m644 .config Makefile Module.symvers System.map \
-    localversion.* version vmlinux
+    version vmlinux
   install -Dt "$builddir/kernel" -m644 kernel/Makefile
   install -Dt "$builddir/arch/arm64" -m644 arch/arm64/Makefile
   cp -t "$builddir" -a scripts

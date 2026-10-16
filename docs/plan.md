@@ -264,24 +264,31 @@ Each phase ends in a verifiable artifact; hardware checkpoints are explicit.
 
 ### Phase 1 — Kernel as a pacman package
 
-- [ ] `kernels/mediatek-mt81/PKGBUILD` building 7.2.7 plus `patches/series` with `make LLVM=1`
-      (clang/lld), reusing `build-kernel.sh`'s proven invocation.
-- [ ] `linux-omarchy-book` installs `vmlinuz-<release>` (`make zinstall` produces no plain
+- [x] `kernels/mediatek-mt81/PKGBUILD` building 7.2.7 plus `patches/series` with `make LLVM=1`
+      (clang/lld), reusing `build-kernel.sh`'s proven invocation. *Verified in the ALARM chroot:
+      both packages build; `kernelrelease` = `7.2.7-mt81`.*
+- [x] `linux-omarchy-book` installs `vmlinuz-<release>` (`make zinstall` produces no plain
       `vmlinuz`), `/usr/lib/modules/<release>`, and DTBs under `/boot/dtbs/` with **hayato first**.
-- [ ] `linux-omarchy-book-headers`; `provides=('linux' 'linux-omarchy')`,
+      *Verified: `/boot/vmlinuz-7.2.7-mt81` (gzip arm64 `Image`), modules with `pkgbase`, and
+      `mt8192-asurada-hayato-r1.dtb` sorts first.*
+- [x] `linux-omarchy-book-headers`; `provides=('linux' 'linux-omarchy')`,
       `conflicts=('linux-omarchy')`, `depends` mirroring the upstream recipe.
-- [ ] mkinitcpio preset, modelled on upstream's `linux-omarchy.preset`. `CONFIG_MMC_MTK`,
+- [x] mkinitcpio preset, modelled on upstream's `linux-omarchy.preset`. `CONFIG_MMC_MTK`,
       `CONFIG_DRM_MEDIATEK` and `CONFIG_EXT4_FS` are built in, so the initramfs stays small; verify
       that the `Possible missing firmware ... mali_csffw.bin for built-in driver panthor` warning is
       still just noise (it comes from initramfs-tools-style scanning of built-in drivers, and
-      panthor never drives this Mali-G57).
+      panthor never drives this Mali-G57). *Verified: `mkinitcpio -P` builds both images from the
+      preset; the warnings seen were `sd-vconsole` (no `/etc/vconsole.conf`), `drm_privacy_screen`
+      and `xhci_pci_renesas` — none the `mali_csffw.bin` one.*
 - [ ] ALPM hook: after a kernel or initramfs change, rebuild and write the kpart — the Arch
       counterpart of the Debian sequence `install-kernel.sh` then `install-kpart.sh` — backing up
       what it replaces.
 - [ ] Package signing and publication into the local `[platform]` repo via `repo-add`.
 
 **Acceptance:** `pacman -U` of the package in a chroot produces a bootable vmlinuz, modules and
-DTBs, and `futility show` on the hook's kpart reports `Body verification succeeded`.
+DTBs, and `futility show` on the hook's kpart reports `Body verification succeeded`. *The
+`pacman -U` half is verified (installing over ALARM's `linux-aarch64`, which ours conflicts with,
+then `mkinitcpio -P`); the `futility show` half waits on the kpart hook below and Phase 5.*
 
 ### Phase 2 — Rootfs bootstrap
 
