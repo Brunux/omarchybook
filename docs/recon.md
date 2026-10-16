@@ -14,6 +14,7 @@ Environment: aarch64 host, `2026-10-16`.
 | `omarchy-pkgs` | `master` | `aad6d43` | PKGBUILDs; builds run in Docker/Podman |
 | `omarchy-iso` | `quattro` | `43cf049` | image builder, pacman configs, `aarch64-package-filter.sh` |
 | `[omarchy]` `edge/aarch64/omarchy.db` | — | 2026-10-16 | **197 packages** (`omarchy.db` downloaded and extracted) |
+| `chromiumos/vboot_reference` | — | `10343b821` (`r2729.10343b821`) | developer keys vendored into `boot/devkeys/`; the revision ALARM's `vboot-utils` is built from |
 
 Recon checkouts live in `$HOME/.cache/omarchybook-recon/` (not part of the repo).
 
@@ -198,7 +199,8 @@ Everything AUR-only that is needed on the device gets built once and published i
 ## Still open (need a chroot or hardware — not answerable read-only)
 
 1. Confirm the built `depthcharge-tools` installs no kernel/initramfs hooks on Arch (disable if it does).
-2. Vendor the vboot developer keys into `boot/devkeys/` (`tests/devkeys` from the pinned
-   vboot_reference revision) and confirm a signed kpart verifies with `futility show`.
+2. **Vendored** the vboot developer keys into `boot/devkeys/` (from `vboot_reference`
+   `10343b821`, recorded in `boot/devkeys/README.md`); still to confirm a signed kpart
+   verifies with `futility show` once `depthcharge-tools` is built.
 3. `pacman -U` / `mkinitcpio` behavior inside the Phase 1/2 chroot.
 4. Whether LUKS is wanted later (plan §8) and whether the SD card must self-install to eMMC (assumed yes).

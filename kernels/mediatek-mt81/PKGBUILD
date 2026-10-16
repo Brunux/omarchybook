@@ -50,30 +50,17 @@ options=(!debug !strip)
 _major=${pkgver%%.*}
 _srcname=linux-${pkgver}
 
-# The kernel patches are applied in this order (patches/series). Keeping the
-# order here rather than relying on a glob is deliberate: the series order is
-# not alphabetical.
+# The patches live in patches/ with a `series` file (docs/plan.md §4) and are
+# applied from there in prepare(): makepkg's local sources must sit next to the
+# PKGBUILD, so they are not listed here, and `series` stays the single source of
+# truth for the order (which is not alphabetical).
 source=(
   "https://cdn.kernel.org/pub/linux/kernel/v${_major}.x/${_srcname}.tar.xz"
   config.aarch64
-  patches/mt8183-fix-bluetooth.patch
-  patches/mt8186-enable-dpi.patch
-  patches/mt8186-ASoC-hdmi-codec-Add-event-handler-for-hdmi-TX.patch
-  patches/mt8186-SoC-mediatek-mt8186-correct-the-HDMI-widgets.patch
-  patches/mt8186-drm-bridge-it6505-Add-audio-support.patch
-  patches/mt8186-ASoC-mediatek-mt8186-make-FE-nonatomic-and-no_pcm.patch
-  patches/mtk-pmdomain.patch
 )
 sha256sums=(
   'SKIP'
   '0e4e548897de1b1b1874bb24070d1854d95369d8370a7f95af35ad8c6e711ee3'
-  '3a8e77c5e3f6a5918f0952ef0cb5b1090ea895ff0dc45e9b139a2d6881e60a51'
-  'dc1b266668e8606ddabca87dc7565cb7a5eb0a6affed4cb98b1189056a39bc39'
-  '8e0d875238c0452db3c8b62207dc385e5dcc0d3bd745e7c6722cb082981256df'
-  '36b946d548d591626bcc7498c2fd8c4996386c48cea59654d52b884030219aaf'
-  '3f3591e3ffa2d7c8c4f0355b281fb79789ecd69fe98615d4a626c08cdd557601'
-  'bf84a43a070d2e1155a59137d276058b76f530916f90896a90698862849b1c70'
-  '11cec3a04c71964563052820f6964d9a0457ffe5fcda593267f1226512cd3169'
 )
 
 # The kernel tarball signature is not verified yet (sha256sums is SKIP for it);
@@ -87,15 +74,15 @@ export LLVM=1
 prepare() {
   cd $_srcname
 
-  local src
-  for src in "${source[@]}"; do
-    src="${src%%::*}"
-    src="${src##*/}"
-    src="${src%.zst}"
-    [[ $src = *.patch ]] || continue
-    echo "Applying patch $src..."
-    patch -Np1 --fuzz=0 < "../$src"
-  done
+  echo "Applying patches from patches/series..."
+  local p
+  while read -r p; do
+    case $p in
+      '' | '#'*) continue ;;
+    esac
+    echo "  $p"
+    patch -Np1 --no-backup-if-mismatch < "$startdir/patches/$p"
+  done < "$startdir/patches/series"
 
   echo "Setting config..."
   cp ../config.aarch64 .config
