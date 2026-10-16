@@ -174,9 +174,11 @@ and missing fails the build. It is invoked as `filter_aarch64_packages <kernel> 
 
 - **`depthcharge-tools` 0.6.2-1**, `arch=('any')`, depends `python`, builds with `python setup.py
   install`. Provides `depthchargectl` / `mkdepthcharge`. The **Debian package's kernel/initramfs
-  hooks are what had to be disabled** in `debian-aarch64`; the AUR recipe installs only the Python
-  package, so it appears to ship no `/etc/kernel/postinst.d` hooks — **still to confirm after a
-  native build**, and disabled if present.
+  hooks are what had to be disabled** in `debian-aarch64`. **Confirmed after a native build in the
+  ALARM chroot**: the package ships only `/usr/bin/depthchargectl`, `/usr/bin/mkdepthcharge` and
+  `usr/lib/python3.14/site-packages/depthcharge_tools/` — **no `/etc/kernel/postinst.d`,
+  `/etc/initramfs/post-update.d` or libalpm hooks**, so nothing to disable on Arch. (The AUR
+  PKGBUILD also forgets `python-setuptools` as a makedepend; the build fails without it.)
 - **`vboot-utils`** exists in two places and they are not equivalent:
   - **Arch Linux ARM's `alarm` repo** (not the AUR): `vboot-utils r2729.10343b821-1`, package file
     `*.pkg.tar.xz` (not `.zst`). Downloaded and listed: it installs `usr/bin/cgpt`,
@@ -198,7 +200,8 @@ Everything AUR-only that is needed on the device gets built once and published i
 
 ## Still open (need a chroot or hardware — not answerable read-only)
 
-1. Confirm the built `depthcharge-tools` installs no kernel/initramfs hooks on Arch (disable if it does).
+1. **Resolved**: the built `depthcharge-tools` installs no kernel/initramfs hooks on Arch (verified
+   from the package file list), so they need not be disabled as on Debian.
 2. **Vendored** the vboot developer keys into `boot/devkeys/` (from `vboot_reference`
    `10343b821`, recorded in `boot/devkeys/README.md`); still to confirm a signed kpart
    verifies with `futility show` once `depthcharge-tools` is built.

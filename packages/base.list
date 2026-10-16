@@ -1,0 +1,51 @@
+# Base system packages (device-agnostic), installed by scripts/build-rootfs.sh.
+#
+# One package per line; blank lines and lines starting with # are ignored.
+# Device-specific packages live in devices/<codename>/packages.list; the Omarchy
+# desktop layer is packages/omarchy.list (docs/plan.md §4). Arch Linux ARM
+# package names.
+
+# init / kernel plumbing. mkinitcpio runs the preset the kernel package ships;
+# the kernel itself is device-specific and comes from the local [platform]
+# bundle (devices/<codename>/packages.list).
+base
+systemd-sysvcompat
+mkinitcpio
+kmod
+# zram-generator: a zram swap device, so a 4 GB machine has somewhere to page.
+zram-generator
+
+# users / privileges
+sudo
+polkit
+
+# network. NetworkManager pulls in wpa_supplicant; iw and wireless-regdb make
+# the wireless interface and its regulatory domain visible (without
+# wireless-regdb, cfg80211 logs "failed to load regulatory.db" and the Wi-Fi
+# stays on the world domain). sshd is the only remote shell on a machine with
+# no serial console.
+networkmanager
+wpa_supplicant
+iw
+wireless-regdb
+openssh
+
+# filesystems / storage. e2fsprogs and dosfstools for the ext4 boot/root and any
+# FAT card; parted for the layout; rsync because scripts/install-emmc.sh copies
+# the running system with it, so it has to exist on the device, not only on the
+# build host.
+e2fsprogs
+dosfstools
+parted
+rsync
+
+# diagnostics
+usbutils
+pciutils
+htop
+less
+nano
+bash-completion
+
+# certificates
+ca-certificates

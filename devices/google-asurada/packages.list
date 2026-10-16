@@ -1,0 +1,41 @@
+# Google Hayato (MediaTek MT8192, board codename `asurada`).
+#
+# One package per line; blank lines and lines starting with # are ignored.
+# Device-agnostic packages live in packages/base.list, and the filter in
+# packages/aarch64-filter.list is applied to this list too.
+
+# Kernel: ours, from the local [platform] bundle, and the only kernel on the
+# image. The release comes from the config (7.2.7-mt81); see
+# kernels/mediatek-mt81 and docs/plan.md Phase 1.
+linux-omarchy-book
+
+# Firmware: MediaTek (the MT8192 SCP and its Wi-Fi/BT) and Realtek (the RTW88
+# Wi-Fi and Bluetooth). Arch Linux ARM splits linux-firmware by vendor; the
+# metapackage also pulls blobs for x86 GPUs this machine never loads, but it is
+# kept because it carries the odd blob whose need only shows on hardware (a
+# Cirrus speaker amp, say) and the bootstrap ships it anyway. The Mali-G57
+# needs none: panthor's mali_csffw.bin is for Gen10, not this Bifrost part,
+# which panfrost drives without firmware.
+linux-firmware
+linux-firmware-mediatek
+linux-firmware-realtek
+
+# ChromeOS boot tooling. vboot-utils provides cgpt, crossystem and futility;
+# depthcharge-tools (built from the AUR recipe into [platform]) provides
+# depthchargectl, which builds the signed FIT written to the kernel partition.
+vboot-utils
+depthcharge-tools
+
+# Keyboard: a Chromebook action row has no F1-F10, and keyd supplies them. The
+# mapping and its exclusions are a device quirk (devices/google-asurada/quirks).
+keyd
+
+# Audio. The MT8192 sound card needs its ALSA UCM BootSequence run (alsa-utils
+# drives it on card add; alsa-ucm-conf carries it), or the only sink is a Dummy
+# Output, and ALSA-only applications need PipeWire's default PCM.
+alsa-ucm-conf
+alsa-utils
+pipewire-alsa
+
+# Backlight control.
+brightnessctl

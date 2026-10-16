@@ -72,6 +72,11 @@ KERNEL_DIR="$KERNELS_DIR/$KERNEL_FLAVOR"
 KERNEL_VERSION="$(cat "$KERNEL_DIR/version")"
 KERNEL_CONFIG="$KERNEL_DIR/config.aarch64"
 KERNEL_PATCH_DIR="$KERNEL_DIR/patches"
+# The Arch package name (docs/plan.md §3). It is NOT derived from the flavor:
+# the flavor names the kernel source tree (mediatek-mt81), the package names the
+# Omarchy kernel for this port (linux-omarchy-book), installed from [platform].
+KERNEL_PACKAGE="${KERNEL_PACKAGE:-linux-omarchy-book}"
+KERNEL_PACKAGE_HEADERS="${KERNEL_PACKAGE_HEADERS:-$KERNEL_PACKAGE-headers}"
 # Kernel ARCH name (deviceinfo uses distro-style names).
 case "$DEVICE_ARCH" in
 	aarch64 | arm64) KERNEL_ARCH=arm64 ;;
@@ -140,4 +145,5 @@ KPART="${KPART:-$WORK_DIR/$DEVICE.vmlinuz.kpart}"
 
 export REPO_DIR BUILD_ROOT WORK_DIR SRC_DIR DEVICE DEVICE_DIR KERNEL_DIR
 export WIFI_DIR LOCALE TIMEZONE
+export KERNEL_PACKAGE KERNEL_PACKAGE_HEADERS
 export BOOT_SIZE_MIB BOOT_FS KERNEL_RELEASE

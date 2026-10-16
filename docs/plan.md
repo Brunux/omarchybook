@@ -292,18 +292,26 @@ then `mkinitcpio -P`); the `futility show` half waits on the kpart hook below an
 
 ### Phase 2 — Rootfs bootstrap
 
-- [ ] `build-rootfs.sh`: bootstrap ALARM aarch64 (a pacstrap-equivalent inside a chroot, or the
+- [x] `build-rootfs.sh`: bootstrap ALARM aarch64 (a pacstrap-equivalent inside a chroot, or the
       ALARM tarball), then write `pacman.conf` with `[platform]` (local bundle) → `[omarchy]`
       edge/aarch64 → ALARM `core`/`extra`/`alarm`, with the `SigLevel` upstream uses.
-- [ ] Install `packages/base.list` plus `devices/google-asurada/packages.list`, applying
+      *Verified: the tarball is the bootstrap; a full `-Syu` is needed first because its
+      `systemd-resolvconf` pins the systemd it shipped with. `DisableSandbox` is added only when
+      the build host lacks Landlock; the keyring is `pacman-key --init` + `--populate archlinuxarm`.*
+- [x] Install `packages/base.list` plus `devices/google-asurada/packages.list`, applying
       `aarch64-filter.list` for the drops and substitutions.
-- [ ] Explicitly **exclude** `limine*`, `linux-omarchy`, `linux-t2`, `snapper`, `btrfs-progs`,
-      `plymouth`, microcode and every `lib32-*`.
-- [ ] Targets: hostname, user with sudo, locale, timezone, NetworkManager, a time sync client, and
-      our kernel as the only kernel.
+- [x] Explicitly **exclude** `limine*`, `linux-omarchy`, `linux-t2`, `snapper`, `btrfs-progs`,
+      `plymouth`, microcode and every `lib32-*`. *Verified: none installed; only `linux-omarchy-book`
+      provides the kernel.*
+- [x] Targets: hostname, user with sudo, locale, timezone, NetworkManager, a time sync client, and
+      our kernel as the only kernel. *Verified: `asurada`, user `omarchy` in `wheel`, `en_US.UTF-8`,
+      `America/Mexico_City`, NetworkManager + systemd-timesyncd + sshd enabled.*
 
 **Acceptance:** a chroot that boots in Phase 5 with the expected package set and no x86 leftovers;
-the filter decisions recorded in `docs/recon.md`.
+the filter decisions recorded in `docs/recon.md`. *The package set and the absence of the excluded
+x86 packages are verified; booting is Phase 5. `linux-firmware`'s x86 vendor splits are kept: the
+bootstrap ships the metapackage, no exclude list names them, and a blob whose need only shows on
+hardware stays reachable.*
 
 ### Phase 3 — Omarchy layer
 

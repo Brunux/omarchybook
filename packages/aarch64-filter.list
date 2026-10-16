@@ -1,0 +1,81 @@
+# aarch64 filter for x86_64-authored package manifests (docs/plan.md §4).
+#
+# scripts/build-rootfs.sh applies this to every list it installs, so a shared
+# Omarchy manifest can be reused on aarch64. One rule per line; blank lines and
+# lines starting with # are ignored. The right-hand side is a shell glob:
+#
+#   drop <glob>              drop any package whose name matches <glob>
+#   replace <name> <name>    rename an exact package name
+#
+# The kernel substitutions point at this repository's kernel (docs/plan.md §3);
+# the rest are x86-only packages Arch Linux ARM does not carry, and that
+# Omarchy's own aarch64 ISO drops in builder/aarch64-package-filter.sh.
+
+# kernel: our kernel package stands in for every x86 kernel name
+replace linux linux-omarchy-book
+replace linux-omarchy linux-omarchy-book
+replace linux-t2 linux-omarchy-book
+replace linux-headers linux-omarchy-book-headers
+replace linux-omarchy-headers linux-omarchy-book-headers
+replace linux-t2-headers linux-omarchy-book-headers
+
+# Arch Linux ARM renames
+replace nvim neovim
+replace vi ex-vi-compat
+
+# bootloader, snapshots and splash that cannot drive a ChromeOS kernel partition
+drop limine*
+drop snapper
+drop btrfs-progs
+drop plymouth
+
+# the ALARM bootstrap kernel: ours is the only one on the image
+drop linux-aarch64
+drop linux-aarch64-headers
+
+# x86 microcode and firmware
+drop amd-ucode
+drop intel-ucode
+drop broadcom-wl
+drop broadcom-wl-dkms
+drop syslinux
+drop memtest86+
+drop memtest86+-efi
+drop edk2-shell
+drop linux-firmware-cirrus-dx13260
+
+# Apple / x86 laptop platform daemons
+drop apple-bcm-firmware
+drop apple-bcm-firmware-fetcher
+drop apple-t2-audio-config
+drop t2fanrd
+drop tiny-dfr
+drop macbook12-spi-driver-dkms
+drop asusctl
+drop dell-xps-touchpad-haptics
+drop dell-xps13-sidecar-amps
+drop tuxedo-drivers-nocompatcheck-dkms
+drop yt6801-dkms
+
+# Intel / NVIDIA x86 graphics and platform bits
+drop intel-ipu7-camera
+drop intel-lpmd
+drop intel-media-driver
+drop libva-intel-driver
+drop vpl-gpu-rt
+drop thermald
+drop nvidia-580xx-dkms
+drop nvidia-580xx-utils
+drop nvidia-dkms
+drop vulkan-intel
+drop vulkan-radeon
+
+# other x86-only kernels and packages
+drop linux-ptl
+drop linux-ptl-headers
+drop superwhisper-bin
+drop obs-studio
+drop yay-debug
+
+# never on aarch64
+drop lib32-*
