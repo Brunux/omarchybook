@@ -1,0 +1,288 @@
+diff --git a/bin/omarchy-hw-aarch64-google b/bin/omarchy-hw-aarch64-google
+new file mode 100755
+index 0000000..335d032
+--- /dev/null
++++ b/bin/omarchy-hw-aarch64-google
+@@ -0,0 +1,17 @@
++#!/bin/bash -p
++
++# omarchy:summary=Detect whether the computer is a Google Chrome OS device.
++
++# Callers run this by absolute path, from systemd and from the shell, so use the
++# detector shipped beside it rather than whichever one PATH finds. -p keeps a
++# root caller's exported functions out, so a launch without it is refused, and
++# nothing here searches PATH.
++if [[ $- != *p* ]]; then
++  echo "Refusing an unsafe Bash startup." >&2
++  exit 126
++fi
++
++dir=${BASH_SOURCE[0]%/*}
++[[ $dir != "${BASH_SOURCE[0]}" ]] || dir=.
++platform=$("$dir/omarchy-hw-platform") || exit 1
++[[ $platform == "aarch64-google" ]]
+diff --git a/bin/omarchy-hw-platform b/bin/omarchy-hw-platform
+index d912986..16c91f8 100755
+--- a/bin/omarchy-hw-platform
++++ b/bin/omarchy-hw-platform
+@@ -1,6 +1,6 @@
+ #!/bin/bash -p
+ 
+-# omarchy:summary=Print the hardware platform: x86, aarch64, aarch64-apple, aarch64-qualcomm, aarch64-n1x or aarch64-gb10.
++# omarchy:summary=Print the hardware platform: x86, aarch64, aarch64-apple, aarch64-qualcomm, aarch64-google, aarch64-n1x or aarch64-gb10.
+ 
+ # Platform names are the CPU architecture, then the hardware family when it
+ # needs handling of its own: x86, aarch64 (every ARM machine without one),
+@@ -11,8 +11,9 @@
+ # Device-tree ARM laptops have no DMI, so the board identity is the root node of
+ # the device tree the firmware hands the kernel: "apple,<model>" from Asahi's
+ # m1n1 on every Apple Silicon Mac, "qcom,<soc>" on Snapdragon laptops, which
+-# must never pass for a Mac. Each compatible string is a NUL-separated list, and
+-# only a token's vendor prefix counts.
++# must never pass for a Mac, and "google,<board>" on Chrome OS devices. Each
++# compatible string is a NUL-separated list, and only a token's vendor prefix
++# counts.
+ #
+ # The NVIDIA N1x laptops boot with ACPI and no device tree. They are the ARM
+ # machines whose CPU-side I2C controllers are ACPI NVDA0200 (MediaTek MT8901 IP)
+@@ -146,8 +147,9 @@ image_platform() {
+     generic-aarch64) platform=aarch64 ;;
+     generic) platform=x86 ;;
+     qualcomm) platform=aarch64-qualcomm ;;
++    google) platform=aarch64-google ;;
+   esac
+-  if [[ ! $platform =~ ^(x86|aarch64|aarch64-apple|aarch64-qualcomm|aarch64-n1x|aarch64-gb10)$ ]]; then
++  if [[ ! $platform =~ ^(x86|aarch64|aarch64-apple|aarch64-qualcomm|aarch64-google|aarch64-n1x|aarch64-gb10)$ ]]; then
+     echo "Error: the image manifest $manifest names no known platform: ${platform:-none}" >&2
+     return 1
+   fi
+@@ -173,18 +175,24 @@ for source in "${sources[@]}"; do
+ 
+   apple=0
+   qcom=0
++  google=0
+   mapfile -d '' -t tokens <"$source"
+   for token in "${tokens[@]}"; do
+     [[ $token == "apple,"* ]] && apple=1
+     [[ $token == "qcom,"* ]] && qcom=1
++    [[ $token == "google,"* ]] && google=1
+   done
+ 
+   if (( apple && qcom )); then
+     contradiction "$source names both Apple and Qualcomm hardware"
++  elif (( google && (apple || qcom) )); then
++    contradiction "$source names Google hardware with another vendor's"
+   elif (( apple )); then
+     found=apple
+   elif (( qcom )); then
+     found=qcom
++  elif (( google )); then
++    found=google
+   else
+     found=none
+   fi
+@@ -228,7 +236,7 @@ if [[ -n $n1x_source && -n $gb10_source ]]; then
+ fi
+ 
+ if [[ -n $n1x_source ]]; then
+-  [[ $vendor != apple && $vendor != qcom ]] ||
++  [[ $vendor != apple && $vendor != qcom && $vendor != google ]] ||
+     contradiction "$vendor_source names $vendor hardware but $n1x_source is an NVIDIA N1x"
+   [[ $machine == "aarch64" ]] || contradiction "$n1x_source is an NVIDIA N1x but the CPU is $machine"
+   echo aarch64-n1x
+@@ -236,7 +244,7 @@ if [[ -n $n1x_source ]]; then
+ fi
+ 
+ if [[ -n $gb10_source ]]; then
+-  [[ $vendor != apple && $vendor != qcom ]] ||
++  [[ $vendor != apple && $vendor != qcom && $vendor != google ]] ||
+     contradiction "$vendor_source names $vendor hardware but $gb10_source is an NVIDIA GB10"
+   [[ $machine == "aarch64" ]] || contradiction "$gb10_source is an NVIDIA GB10 but the CPU is $machine"
+   echo aarch64-gb10
+@@ -244,13 +252,13 @@ if [[ -n $gb10_source ]]; then
+ fi
+ 
+ case $vendor in
+-  apple | qcom)
++  apple | qcom | google)
+     [[ $machine == "aarch64" ]] || contradiction "$vendor_source names $vendor hardware but the CPU is $machine"
+-    if [[ $vendor == "apple" ]]; then
+-      echo aarch64-apple
+-    else
+-      echo aarch64-qualcomm
+-    fi
++    case $vendor in
++      apple) echo aarch64-apple ;;
++      qcom) echo aarch64-qualcomm ;;
++      google) echo aarch64-google ;;
++    esac
+     ;;
+   *)
+     if [[ $machine == "aarch64" ]]; then
+diff --git a/bin/omarchy-lifecycle-dispatch b/bin/omarchy-lifecycle-dispatch
+index 5680cc6..1f810a6 100755
+--- a/bin/omarchy-lifecycle-dispatch
++++ b/bin/omarchy-lifecycle-dispatch
+@@ -100,6 +100,13 @@ fi
+ # generic setup and installs. Moving an operation to required also changes
+ # apple_optional in test/shell.d/lifecycle-dispatch-test.sh and the Apple column
+ # and registration table in docs/lifecycle-dispatch.md.
++#
++# Google Chrome OS devices (aarch64-google) boot a signed depthcharge FIT from
++# their GPT kernel partition, which the generic Limine path cannot drive, so
++# their boot package owns setup-boot and update-verify. Provisioning, factory
++# reset and luks-slots stay no-ops: this platform has no LUKS, so the generic
++# paths have nothing to do. System setup and the app-install hooks live in the
++# runtime package and are optional, like the Mac's.
+ case $platform:$operation in
+   aarch64-apple:setup-system | aarch64-apple:setup-user | aarch64-apple:post-install | aarch64-apple:pre-remove)
+     implementation=/usr/lib/omarchy/mac
+@@ -117,6 +124,19 @@ case $platform:$operation in
+       setup-boot
+     )
+     ;;
++  aarch64-google:setup-system | aarch64-google:setup-user | aarch64-google:post-install | aarch64-google:pre-remove)
++    implementation=/usr/lib/omarchy/google
++    package=omarchy-google
++    required=()
++    ;;
++  aarch64-google:*)
++    implementation=/usr/lib/omarchy/google-boot
++    package=omarchy-google-boot
++    required=(
++      update-verify
++      setup-boot
++    )
++    ;;
+   *)
+     exit 0
+     ;;
+diff --git a/bin/omarchy-pkg-defaults b/bin/omarchy-pkg-defaults
+index 8fa54a2..65506c9 100755
+--- a/bin/omarchy-pkg-defaults
++++ b/bin/omarchy-pkg-defaults
+@@ -1,7 +1,7 @@
+ #!/bin/bash
+ 
+ # omarchy:summary=Print the default package set for this computer's platform, or for the named one: the base list plus its architecture's and platform's additions.
+-# omarchy:args=[x86|aarch64|aarch64-apple|aarch64-qualcomm|aarch64-n1x|aarch64-gb10]
++# omarchy:args=[x86|aarch64|aarch64-apple|aarch64-qualcomm|aarch64-google|aarch64-n1x|aarch64-gb10]
+ # omarchy:hidden=true
+ 
+ set -eo pipefail
+@@ -22,7 +22,7 @@ esac
+ case $platform in
+   x86) lists=(base) ;;
+   aarch64) lists=(base aarch64) ;;
+-  aarch64-apple | aarch64-qualcomm | aarch64-n1x | aarch64-gb10) lists=(base aarch64 "$platform") ;;
++  aarch64-apple | aarch64-qualcomm | aarch64-google | aarch64-n1x | aarch64-gb10) lists=(base aarch64 "$platform") ;;
+   *)
+     echo "Error: unknown platform '$platform'" >&2
+     exit 1
+diff --git a/install/hardware/all.sh b/install/hardware/all.sh
+index 8db9b2b..ce8bb98 100644
+--- a/install/hardware/all.sh
++++ b/install/hardware/all.sh
+@@ -52,6 +52,11 @@ run_logged "$OMARCHY_INSTALL/hardware/qualcomm/kernel-params.sh"
+ run_logged "$OMARCHY_INSTALL/hardware/qualcomm/initramfs.sh"
+ run_logged "$OMARCHY_INSTALL/hardware/qualcomm/firmware.sh"
+ 
++run_logged "$OMARCHY_INSTALL/hardware/google/firmware.sh"
++run_logged "$OMARCHY_INSTALL/hardware/google/audio.sh"
++run_logged "$OMARCHY_INSTALL/hardware/google/keyboard.sh"
++run_logged "$OMARCHY_INSTALL/hardware/google/boot.sh"
++
+ run_logged "$OMARCHY_INSTALL/hardware/lenovo/fix-yoga-pro7-bass-speakers.sh"
+ run_logged "$OMARCHY_INSTALL/hardware/lenovo/yoga-slim7x.sh"
+ 
+diff --git a/install/hardware/google/audio.sh b/install/hardware/google/audio.sh
+new file mode 100644
+index 0000000..2fc168f
+--- /dev/null
++++ b/install/hardware/google/audio.sh
+@@ -0,0 +1,9 @@
++# Google Chrome OS (aarch64-google) audio.
++#
++# The MT8192 card's routing lives in an ALSA UCM BootSequence, which alsa-lib
++# runs only on an explicit `set _boot`: alsactl restore (alsa-utils) drives it on
++# card add, and without it the only sink is a Dummy Output. pipewire-alsa gives
++# ALSA-only applications the default PCM.
++if omarchy-hw-aarch64-google; then
++  omarchy-pkg-add alsa-ucm-conf alsa-utils pipewire-alsa
++fi
+diff --git a/install/hardware/google/boot.sh b/install/hardware/google/boot.sh
+new file mode 100644
+index 0000000..d9471a2
+--- /dev/null
++++ b/install/hardware/google/boot.sh
+@@ -0,0 +1,10 @@
++# Google Chrome OS (aarch64-google) boot prerequisites.
++#
++# A Chrome OS device boots a signed depthcharge FIT from the GPT partition whose
++# PARTUUID equals the `kern_guid` in the kernel command line. Ensuring that
++# partition holds the current kernel is the platform boot package's setup-boot
++# entrypoint (omarchy-google-boot, resolved from kern_guid); this leaf only
++# guarantees the tools it needs are present.
++if omarchy-hw-aarch64-google; then
++  omarchy-pkg-add vboot-utils depthcharge-tools
++fi
+diff --git a/install/hardware/google/firmware.sh b/install/hardware/google/firmware.sh
+new file mode 100644
+index 0000000..e634fdd
+--- /dev/null
++++ b/install/hardware/google/firmware.sh
+@@ -0,0 +1,8 @@
++# Google Chrome OS (aarch64-google) firmware.
++#
++# Arch Linux ARM splits linux-firmware by vendor; MediaTek carries the MT8192
++# SCP images and Realtek the RTW88 Wi-Fi and Bluetooth blobs, and the base
++# package does not pull either in.
++if omarchy-hw-aarch64-google; then
++  omarchy-pkg-add linux-firmware-mediatek linux-firmware-realtek
++fi
+diff --git a/install/hardware/google/keyboard.sh b/install/hardware/google/keyboard.sh
+new file mode 100644
+index 0000000..47ed093
+--- /dev/null
++++ b/install/hardware/google/keyboard.sh
+@@ -0,0 +1,10 @@
++# Google Chrome OS (aarch64-google) keyboard.
++#
++# The Chromebook action row emits KEY_BACK/FORWARD/REFRESH/FULL_SCREEN/SCALE and
++# brightness/mute/volume keys, so switching VTs needs real F-key keycodes that
++# keyd supplies. The device-specific mapping (and the cros_ec_buttons / headset
++# jack exclusions, which share the keyboard's 0000:0000 id) is hardware-specific
++# and ships with the platform package, not here.
++if omarchy-hw-aarch64-google; then
++  omarchy-pkg-add keyd
++fi
+diff --git a/install/omarchy-aarch64-google.packages b/install/omarchy-aarch64-google.packages
+new file mode 100644
+index 0000000..60dcff4
+--- /dev/null
++++ b/install/omarchy-aarch64-google.packages
+@@ -0,0 +1,24 @@
++# Google Chrome OS (aarch64-google) additions, composed after
++# omarchy-base.packages and omarchy-aarch64.packages. The kernel and the signed
++# depthcharge boot chain come with the image (the kernel travels as a [platform]
++# bundle), not from here; a device cannot work without the packages below.
++
++# Chrome OS boot tooling. `vboot-utils` provides cgpt, crossystem and futility
++# together, and `depthcharge-tools` provides depthchargectl, which builds the
++# signed FIT written to the kernel partition.
++vboot-utils
++depthcharge-tools
++
++# The Chromebook action row has no F1-F10; keyd supplies them.
++keyd
++
++# The MT8192 sound card is only usable once its ALSA UCM boot sequence has run
++# (alsa-utils), and ALSA-only applications need PipeWire's default PCM.
++alsa-ucm-conf
++alsa-utils
++pipewire-alsa
++
++# Firmware split by vendor in Arch Linux ARM: MediaTek (SCP) and Realtek
++# (RTW88 Wi-Fi and Bluetooth).
++linux-firmware-mediatek
++linux-firmware-realtek
