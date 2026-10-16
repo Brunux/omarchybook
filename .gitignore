@@ -1,0 +1,19 @@
+# Build artifacts and scratch files (large builds live outside the repo, but
+# just in case they end up here).
+*.img
+*.img.xz
+*.kpart
+build/
+out/
+
+# Arch/pacman build output (makepkg runs in place, e.g. kernels/<flavor>/).
+pkg/
+src/
+*.pkg.tar
+*.pkg.tar.zst
+*.pkg.tar.xz
+
+# NetworkManager Wi-Fi profiles: they contain the network PSK, so they are
+# exported to $WIFI_DIR (outside the repo) and never committed.
+*.nmconnection
+wifi/
