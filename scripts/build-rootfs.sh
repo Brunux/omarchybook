@@ -53,6 +53,22 @@ log "Device : $DEVICE ($DEVICE_ARCH)"
 log "Kernel : $KERNEL_FLAVOR $KERNEL_RELEASE"
 log "Rootfs : $ROOTFS"
 
+# The installed desktop set is about 9GiB before compression and the extraction
+# and package cache want room on top of it. Running out mid-install fails deep
+# inside a chroot ("No space left on device" from an unrelated mkdir) and costs
+# the whole build, so check the budget up front.
+avail_kib="$(df -Pk "$WORK_DIR" | awk 'NR == 2 { print $4 }')"
+if [ "$avail_kib" -lt $((12 * 1024 * 1024)) ]; then
+	die "not enough space in $WORK_DIR: $((avail_kib / 1024 / 1024))GiB free, need about 12GiB
+makepkg work directories are the usual leak (docs/recon.md §9); reclaim them with:
+	rm -rf $BUILD_CHROOT/build $WORK_DIR/rootfs-*"
+fi
+
+# The Omarchy runtime and settings carry the vendored aarch64-google patch, so
+# they are built from the pinned checkout into [platform] before the bundle is
+# indexed below (docs/plan.md Phase 3).
+"$REPO_DIR/scripts/build-omarchy.sh"
+
 # ---------------------------------------------------------------------------
 # Bootstrap
 # ---------------------------------------------------------------------------
@@ -121,11 +137,23 @@ Server = ${ALARM_MIRROR}
 
 [alarm]
 Server = ${ALARM_MIRROR}
+
+[aur]
+Server = ${ALARM_MIRROR}
 EOF
 
 log "Initializing the pacman keyring"
 chroot "$ROOTFS" pacman-key --init
 chroot "$ROOTFS" pacman-key --populate archlinuxarm
+
+# [omarchy] signs its database and packages with a key Arch Linux ARM's keyring
+# does not carry, so trust the vendored copy before installing anything from it
+# (keys/README.md).
+log "Trusting the Omarchy signing key"
+cp "$OMARCHY_KEY_FILE" "$ROOTFS/tmp/omarchy.gpg"
+chroot "$ROOTFS" pacman-key --add /tmp/omarchy.gpg
+chroot "$ROOTFS" pacman-key --lsign-key "$OMARCHY_SIGNING_KEY"
+rm -f "$ROOTFS/tmp/omarchy.gpg"
 
 # ---------------------------------------------------------------------------
 # [platform] bundle
@@ -261,5 +289,116 @@ chmod 440 /etc/sudoers.d/10-wheel
 
 systemctl enable NetworkManager systemd-timesyncd sshd
 EOS
+
+# ---------------------------------------------------------------------------
+# Phase 3 -- the Omarchy layer
+# ---------------------------------------------------------------------------
+# The runtime, settings and editor, plus the desktop set composed from the
+# checkout's own lists. The image manifest goes in first: it makes the detector
+# answer aarch64-google inside the chroot, so package setup describes the target
+# rather than the builder, and it queues the hardware leaves to the machine's
+# first boot (docs/recon.md §2).
+log "Pinning platform=$OMARCHY_PLATFORM in the image manifest"
+mkdir -p "$ROOTFS/var/lib/omarchy/image"
+chmod 0755 "$ROOTFS/var/lib/omarchy/image"
+printf 'format=1\nplatform=%s\n' "$OMARCHY_PLATFORM" \
+	> "$ROOTFS/var/lib/omarchy/image/target"
+chmod 0644 "$ROOTFS/var/lib/omarchy/image/target"
+
+# The desktop set: omarchy-base.packages plus the aarch64 additions and the
+# platform's own, minus the packages the runtime marks x86_64-only. The same
+# composition omarchy-pkg-defaults and the ISO's aarch64_default_set produce.
+compose_omarchy_set() {
+	local dir="$OMARCHY_SRC_DIR/install"
+	local skip="$dir/omarchy-x86_64-only.packages"
+	local -a lists=("$dir/omarchy-base.packages" "$dir/omarchy-aarch64.packages")
+	local platform_list="$dir/omarchy-aarch64-$OMARCHY_PLATFORM.packages"
+	[ -f "$platform_list" ] && lists+=("$platform_list")
+	awk -v skips="$skip" '
+		BEGIN { while ((getline line < skips) > 0) { sub(/[ \t]*#.*$/, "", line); if (line != "") skip[line] = 1 } }
+		{ sub(/[ \t]*#.*$/, ""); gsub(/^[ \t]+|[ \t]+$/, "") }
+		$0 == "" { next }
+		skip[$0] { next }
+		!seen[$0]++
+	' "${lists[@]}"
+}
+
+log "Installing the Omarchy package set"
+# omarchy-settings' install scriptlet takes a lock under /run/lock before it
+# declares the package installed; the ALARM tarball has no /run/lock (systemd
+# creates it on a booted machine), so give the chroot one.
+mkdir -p "$ROOTFS/run/lock"
+chmod 0755 "$ROOTFS/run" "$ROOTFS/run/lock"
+mapfile -t omarchy_names < <(
+	compose_omarchy_set | filter_list
+	filter_list < "$PACKAGES_DIR/omarchy.list"
+)
+mapfile -t omarchy_names < <(printf '%s\n' "${omarchy_names[@]}" | awk '!seen[$0]++')
+chroot "$ROOTFS" pacman -S --noconfirm --needed "${omarchy_names[@]}"
+
+# The installer's own root phases (config, hardware, login, post-install), the
+# way `omarchy apply system` runs them. The hardware leaves see the manifest and
+# queue themselves for first boot instead of describing this build host.
+log "Running the Omarchy system setup"
+if ! chroot "$ROOTFS" env USERNAME="$USERNAME" \
+	/bin/bash -euo pipefail -c \
+	'omarchy-apply-system --install-user "$USERNAME" --first-install'; then
+	tail -n 100 "$ROOTFS/var/log/omarchy-install.log" >&2 || true
+	die "omarchy-apply-system failed (see /var/log/omarchy-install.log in the rootfs)"
+fi
+
+# Plan §3's whole pinning policy: nothing but IgnorePkg for the linux-omarchy
+# family, so an update can never pull a different kernel over the one this port
+# ships. The post-install leaf wrote Omarchy's own pacman.conf a moment ago, so
+# the pin is added after it, and inside [options] where pacman expects it.
+log "Pinning the linux-omarchy family in /etc/pacman.conf"
+ignore_pkgs="linux-omarchy linux-omarchy-headers linux-omarchy-book linux-omarchy-book-headers"
+if grep -q '^IgnorePkg' "$ROOTFS/etc/pacman.conf"; then
+	sed -i "s|^IgnorePkg *=.*|IgnorePkg = $ignore_pkgs|" "$ROOTFS/etc/pacman.conf"
+else
+	sed -i "/^\[options\]/a IgnorePkg = $ignore_pkgs" "$ROOTFS/etc/pacman.conf"
+fi
+
+# The per-user phases /etc/skel cannot seed, as the user (the command refuses
+# to run as root). With --first-install the command treats itself as the ISO's
+# install chroot, and that context's offline path unpacks the Node.js tarball
+# the ISO bundles in /opt/packages (install/user/mise-work.sh), so stage the
+# same one. The ISO's builder picks it out of the nodejs.org release manifest
+# and checks it (builder/node-release.sh + build-iso.sh); do the same and keep
+# it under src/ so a rebuild does not fetch it again.
+node_platform=linux-x64
+[ "$DEVICE_ARCH" = aarch64 ] && node_platform=linux-arm64
+node_tarball="$(find "$SRC_DIR" -maxdepth 1 -name "node-v*-$node_platform.tar.gz" -print -quit)"
+if [ -z "$node_tarball" ]; then
+	log "Downloading the bundled Node.js ($node_platform) for the offline mise install"
+	node_manifest="$(curl -fsSL https://nodejs.org/dist/latest/SHASUMS256.txt)" ||
+		die "could not fetch https://nodejs.org/dist/latest/SHASUMS256.txt"
+	node_row="$(awk -v suffix="-$node_platform.tar.gz" '
+		length($2) >= length(suffix) &&
+			substr($2, length($2) - length(suffix) + 1) == suffix {
+			if (found) { duplicate = 1; next }
+			sha = $1; filename = $2; found = 1
+		}
+		END { if (!found || duplicate) exit 1; print sha "  " filename }
+	' <<<"$node_manifest")" ||
+		die "no single Node.js $node_platform tarball in SHASUMS256.txt"
+	node_name="${node_row#*  }"
+	node_tarball="$SRC_DIR/$node_name"
+	curl -fSL --retry 3 -o "$node_tarball" "https://nodejs.org/dist/latest/$node_name" ||
+		die "could not download $node_name"
+	printf '%s  %s\n' "${node_row%%  *}" "$node_tarball" | sha256sum -c - ||
+		die "checksum mismatch for $node_name"
+fi
+
+log "Staging the bundled Node.js in the image's /opt/packages"
+mkdir -p "$ROOTFS/opt/packages"
+cp "$node_tarball" "$ROOTFS/opt/packages/"
+
+log "Provisioning the user '$USERNAME'"
+chroot "$ROOTFS" su - "$USERNAME" -c 'omarchy-provision-user --first-install'
+
+# The ISO injects /opt/packages with a bind mount for the install only, and the
+# installed system does not keep it, so neither does the image.
+rm -rf "$ROOTFS/opt/packages"
 
 log "Rootfs ready: $ROOTFS"

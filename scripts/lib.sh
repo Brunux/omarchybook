@@ -127,6 +127,35 @@ CHANNEL="${CHANNEL:-edge}"
 OMARCHY_MIRROR="${OMARCHY_MIRROR:-https://pkgs.omarchy.org/$CHANNEL/\$arch}"
 ALARM_MIRROR="${ALARM_MIRROR:-https://arm-mirror.omarchy.org/\$arch/\$repo}"
 
+# ---------------------------------------------------------------------------
+# Omarchy layer (Phase 3)
+# ---------------------------------------------------------------------------
+# The runtime and settings packages must carry the vendored aarch64-google patch
+# (upstream/omarchy/), so they are built here from a pinned quattro checkout
+# with omarchy-pkgs' *-dev recipes — the ISO's --local-source model — and
+# published into [platform]. The released `omarchy`/`omarchy-settings` are built
+# from basecamp/omarchy at a tag that predates platform detection.
+# omarchy-nvim ships unpatched and comes from [omarchy].
+OMARCHY_GIT="${OMARCHY_GIT:-https://github.com/omacom/omarchy.git}"
+OMARCHY_COMMIT="${OMARCHY_COMMIT:-51bfd1dbaa1b5f790e19623faf2745945d40c796}"
+OMARCHY_SRC_DIR="${OMARCHY_SRC_DIR:-$SRC_DIR/omarchy}"
+OMARCHY_PATCH_DIR="$REPO_DIR/upstream/omarchy/patches"
+OMARCHY_PKGS_DIR="$REPO_DIR/upstream/omarchy-pkgs/pkgbuilds"
+OMARCHY_PACKAGE="${OMARCHY_PACKAGE:-omarchy-dev}"
+OMARCHY_SETTINGS_PACKAGE="${OMARCHY_SETTINGS_PACKAGE:-omarchy-settings-dev}"
+OMARCHY_NVIM_PACKAGE="${OMARCHY_NVIM_PACKAGE:-omarchy-nvim}"
+OMARCHY_KEYRING_PACKAGE="${OMARCHY_KEYRING_PACKAGE:-omarchy-keyring}"
+OMARCHY_SIGNING_KEY="${OMARCHY_SIGNING_KEY:-40DFB630FF42BCFFB047046CF0134EE680CAC571}"
+OMARCHY_KEY_FILE="${OMARCHY_KEY_FILE:-$REPO_DIR/keys/omarchy.gpg}"
+# The platform an image manifest pins (/var/lib/omarchy/image/target): the name
+# omarchy-hw-platform maps to aarch64-google. It makes the build describe the
+# target rather than the builder and defers the hardware leaves to first boot
+# (docs/recon.md §2).
+OMARCHY_PLATFORM="${OMARCHY_PLATFORM:-google}"
+# An Arch environment to build packages in (makepkg needs one; the build host is
+# not Arch). Created on demand by build-omarchy.sh; never part of the image.
+BUILD_CHROOT="${BUILD_CHROOT:-$BUILD_ROOT/build-chroot}"
+
 # NetworkManager Wi-Fi profiles exported from the running system. They contain
 # the PSK, so they deliberately live outside the repository.
 WIFI_DIR="${WIFI_DIR:-$BUILD_ROOT/wifi}"
@@ -142,8 +171,17 @@ TIMEZONE="${TIMEZONE:-America/Mexico_City}"
 ROOTFS="${ROOTFS:-$WORK_DIR/rootfs-$DEVICE}"
 KERNEL_STAGE="${KERNEL_STAGE:-$WORK_DIR/kernel-stage-$KERNEL_FLAVOR}"
 KPART="${KPART:-$WORK_DIR/$DEVICE.vmlinuz.kpart}"
+# The local package bundle indexed into the image at /packages, and the shared
+# pacman cache that survives rootfs rebuilds.
+PLATFORM_REPO="${PLATFORM_REPO:-$BUILD_ROOT/platform}"
+PACMAN_CACHE="${PACMAN_CACHE:-$BUILD_ROOT/pacman-cache}"
 
 export REPO_DIR BUILD_ROOT WORK_DIR SRC_DIR DEVICE DEVICE_DIR KERNEL_DIR
 export WIFI_DIR LOCALE TIMEZONE
 export KERNEL_PACKAGE KERNEL_PACKAGE_HEADERS
 export BOOT_SIZE_MIB BOOT_FS KERNEL_RELEASE
+export PLATFORM_REPO PACMAN_CACHE
+export OMARCHY_GIT OMARCHY_COMMIT OMARCHY_SRC_DIR OMARCHY_PATCH_DIR
+export OMARCHY_PKGS_DIR OMARCHY_PACKAGE OMARCHY_SETTINGS_PACKAGE
+export OMARCHY_NVIM_PACKAGE OMARCHY_KEYRING_PACKAGE OMARCHY_SIGNING_KEY
+export OMARCHY_KEY_FILE OMARCHY_PLATFORM BUILD_CHROOT

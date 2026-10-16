@@ -23,11 +23,13 @@ replace linux-t2-headers linux-omarchy-book-headers
 replace nvim neovim
 replace vi ex-vi-compat
 
-# bootloader, snapshots and splash that cannot drive a ChromeOS kernel partition
+# bootloader, snapshots and splash. limine and snapper cannot drive a ChromeOS
+# kernel partition, and neither can boot from one; plymouth is not a boot
+# requirement but Omarchy's settings package depends on it, so it stays
+# installed and simply never runs (the platform owns the initramfs).
 drop limine*
 drop snapper
 drop btrfs-progs
-drop plymouth
 
 # the ALARM bootstrap kernel: ours is the only one on the image
 drop linux-aarch64

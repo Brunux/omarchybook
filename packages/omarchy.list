@@ -1,0 +1,16 @@
+# Omarchy packages installed explicitly, alongside the desktop set composed from
+# the checkout's own lists (docs/plan.md Phase 3).
+#
+# The runtime and settings are built here from the pinned quattro checkout with
+# the vendored aarch64-google patch and come from [platform]; the keyring and the
+# editor come from [omarchy]. The desktop set itself (omarchy-base.packages plus
+# the aarch64 and platform additions) is not listed here: it is composed at build
+# time so it cannot drift from the packages that ship it, exactly as the ISO and
+# omarchy-pkg-defaults do.
+#
+# One package per line; blank lines and lines starting with # are ignored, and
+# packages/aarch64-filter.list is applied here too.
+omarchy-keyring
+omarchy-dev
+omarchy-settings-dev
+omarchy-nvim

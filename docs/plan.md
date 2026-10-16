@@ -215,13 +215,20 @@ omarchybook/
                               packages.list, quirks/ (keyd, udev, ucm, firmware)
   kernels/mediatek-mt81/      version, config.aarch64, patches/{series,*.patch},
                               PKGBUILD, APKBUILD.reference (upstream, reference only)
-  packages/                   base.list (ALARM), omarchy.list (edge/aarch64),
+  packages/                   base.list (ALARM), omarchy.list (the Omarchy
+                              packages installed explicitly; the desktop set
+                              itself is composed from the runtime's own lists),
                               aarch64-filter.list (x86-only drops and substitutions)
+  keys/                       omarchy.gpg, the [omarchy] signing key (its repo
+                              ships no keyring Arch Linux ARM's trusts)
   boot/                       lib-cgpt.sh, make-kpart.sh, the pacman hook that rewrites p1,
                               depthcharge devkeys (the ALARM vboot-utils carries none);
                               the canonical boot-chain copy, consumed by scripts/
   upstream/omarchy/           patches/series plus 0001-aarch64-google.patch (the proposal)
-  scripts/                    00-deps.sh, build-kernel.sh, build-rootfs.sh, install-kernel.sh,
+  upstream/omarchy-pkgs/      the *-dev recipes the runtime and settings are
+                              built from (pinned to the same quattro commit)
+  scripts/                    00-deps.sh, build-kernel.sh, build-omarchy.sh,
+                              build-rootfs.sh, install-kernel.sh,
                               write-sd.sh, make-image.sh, make-release.sh,
                               install-emmc.sh, install-kpart.sh, backup-system.sh,
                               restore-system.sh, check-system.sh,
@@ -301,8 +308,10 @@ then `mkinitcpio -P`); the `futility show` half waits on the kpart hook below an
 - [x] Install `packages/base.list` plus `devices/google-asurada/packages.list`, applying
       `aarch64-filter.list` for the drops and substitutions.
 - [x] Explicitly **exclude** `limine*`, `linux-omarchy`, `linux-t2`, `snapper`, `btrfs-progs`,
-      `plymouth`, microcode and every `lib32-*`. *Verified: none installed; only `linux-omarchy-book`
-      provides the kernel.*
+      microcode and every `lib32-*`. *Verified: none installed; only `linux-omarchy-book`
+      provides the kernel. `plymouth` is **not** excluded: `omarchy-settings` depends on it
+      (docs/recon.md §8), so the package stays installed although nothing in this boot chain
+      runs it.*
 - [x] Targets: hostname, user with sudo, locale, timezone, NetworkManager, a time sync client, and
       our kernel as the only kernel. *Verified: `asurada`, user `omarchy` in `wheel`, `en_US.UTF-8`,
       `America/Mexico_City`, NetworkManager + systemd-timesyncd + sshd enabled.*
@@ -315,18 +324,34 @@ hardware stays reachable.*
 
 ### Phase 3 — Omarchy layer
 
-- [ ] Apply `upstream/omarchy/patches/0001-aarch64-google.patch` (see §6) before installing, so the
-      machine reports `aarch64-google` and the lifecycle operations exist.
-- [ ] Install `omarchy`, `omarchy-settings` and `omarchy-nvim`, plus the Omarchy package list, the
-      way the ISO does it.
-- [ ] Run the `install/` phases in the chroot as their installer does, deferring machine-specific
+- [x] Apply `upstream/omarchy/patches/0001-aarch64-google.patch` (see §6) before installing, so the
+      machine reports `aarch64-google` and the lifecycle operations exist. *The released
+      `omarchy`/`omarchy-settings` predate the platform layer, so the runtime and settings are built
+      from the pinned checkout as `omarchy-dev`/`omarchy-settings-dev` (`scripts/build-omarchy.sh`,
+      recipes vendored in `upstream/omarchy-pkgs/`), with the `[omarchy]` key trusted from
+      `keys/omarchy.gpg`.*
+- [x] Install `omarchy`, `omarchy-settings` and `omarchy-nvim`, plus the Omarchy package list, the
+      way the ISO does it. *`packages/omarchy.list` is installed explicitly and the desktop set is
+      composed from the checkout's own lists (`omarchy-base` + `omarchy-aarch64` + the platform's,
+      minus `omarchy-x86_64-only.packages`) in one transaction.*
+- [x] Run the `install/` phases in the chroot as their installer does, deferring machine-specific
       hardware leaves to first boot when that is what their model expects
       (`/var/lib/omarchy/image/target` with `format=1`, `platform=google`); otherwise run them at
-      build time. Decide from Phase 0.
-- [ ] Create the user and run `omarchy-provision-user` for it.
+      build time. *`omarchy-apply-system` reports "deferred 54 hardware steps to first boot", and the
+      user phase's platform leaf defers the same way.*
+- [x] Create the user and run `omarchy-provision-user` for it. *As the user and with
+      `--first-install`; that context takes the ISO's offline path, which wants the Node.js tarball
+      the ISO bundles in `/opt/packages` (`install/user/mise-work.sh`), so the build fetches the same
+      release from nodejs.org with its manifest checksum, stages it, and removes it afterwards.*
+- [x] Add §3's pin inside `[options]` —
+      `IgnorePkg = linux-omarchy linux-omarchy-headers linux-omarchy-book linux-omarchy-book-headers`
+      — after the post-install leaf writes Omarchy's own `pacman.conf` in its place.
 
-**Acceptance:** `omarchy-hw-platform` prints `aarch64-google`; the family's lifecycle operations are
-listed and resolve; Omarchy's own version/update command reports a coherent system.
+**Acceptance:** `omarchy-hw-platform` prints `aarch64-google`, from the manifest and from a
+`google,asurada` device tree; `setup-boot`/`update-verify` resolve to `omarchy-google-boot` and stop
+at "it is not installed" (exit 3 — Phase 4's package), while `setup-system` and `setup-user`
+succeed; only `linux-omarchy-book` provides the kernel, `snapper`/`btrfs-progs`/`limine*` are absent,
+and `omarchy-version` reports `4.0.0.r7026.g51bfd1d-1`.
 
 ### Phase 4 — Device layer (Hayato)
 

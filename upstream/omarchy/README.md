@@ -21,6 +21,10 @@ but every lifecycle operation is a no-op and hardware setup never runs.
 | `bin/omarchy-pkg-defaults` | compose `install/omarchy-aarch64-google.packages` for the platform |
 | `install/omarchy-aarch64-google.packages` | new package list: `vboot-utils` (cgpt+crossystem+futility), `depthcharge-tools`, `keyd`, `alsa-ucm-conf`, `alsa-utils`, `pipewire-alsa`, `linux-firmware-mediatek`, `linux-firmware-realtek` |
 | `install/hardware/google/{firmware,audio,keyboard,boot}.sh` | new `aarch64-google`-gated leaves, wired into `install/hardware/all.sh` |
+| `install/helpers/image-target.sh` | accept `platform=google` in the build manifest (maps to `aarch64-google`), so an image can defer its hardware setup to first boot on a Chrome OS device |
+| `install/helpers/pacman.sh` | map `aarch64-google` to the shared aarch64 pacman templates and the `edge` channel, like the other ARM platforms |
+| `install/config/snapper.sh` | skip when `snapper` is not installed: the platform has no btrfs, so there is nothing to configure and the leaf would otherwise abort the install |
+| `etc/mkinitcpio.conf.d/00-omarchy-hooks.conf` | an `aarch64-google` machine's boot package owns its initramfs (the signed FIT is built from it), so the baseline leaves `HOOKS` alone like a platform-owned Mac, instead of asking for `plymouth`/`btrfs-overlayfs` hooks this boot chain does not use |
 
 The entrypoints themselves (`omarchy-google-boot`, `omarchy-google`) are **not**
 part of this patch: like Apple's `omarchy-mac-boot`/`omarchy-mac`, they ship in
@@ -54,9 +58,8 @@ and the build uses stock Omarchy (docs/plan.md §8).
   `docs/file-layout.md`.
 - Check the remaining platform enumerations the patch does not touch yet:
   `bin/omarchy-hw-apple-silicon`, `bin/omarchy-hibernation-setup`,
-  `bin/omarchy-setup-direct-boot`, `install/helpers/{image-target,pacman}.sh`,
-  `etc/mkinitcpio.conf.d/00-omarchy-hooks.conf`, `install/hardware/fix-fkeys.sh`,
-  `default/omarchy/omarchy-menu.jsonc`.
+  `bin/omarchy-setup-direct-boot`, `etc/mkinitcpio.conf.d/00-omarchy-hooks.conf`,
+  `install/hardware/fix-fkeys.sh`, `default/omarchy/omarchy-menu.jsonc`.
 - Fill in the hardware leaves with the real device configuration (keyd mapping
   and exclusions, UCM, the `kern_guid`-resolved kpart rebuild), which currently
   only install packages (docs/plan.md §6, Phase 4).

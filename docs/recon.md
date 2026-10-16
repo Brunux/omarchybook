@@ -198,6 +198,96 @@ and missing fails the build. It is invoked as `filter_aarch64_packages <kernel> 
 Everything AUR-only that is needed on the device gets built once and published into the local
 `[platform]` bundle (`repo-add`), per plan §7.
 
+## 8. The Omarchy layer (Phase 3)
+
+**The released packages cannot carry the patch.** `[omarchy]`'s `omarchy-4.0.4-2` and
+`omarchy-settings-4.0.4-6` are built from `basecamp/omarchy` at the `v4.0.4` tag
+(`_commit=c668141`), whose tree has **no** `bin/omarchy-hw-platform`,
+`bin/omarchy-lifecycle-dispatch` or `bin/omarchy-pkg-defaults` — the platform layer this port
+patches. `git apply` of the proposal against that tree fails on four files. The layer exists only
+on the `quattro` tip (`51bfd1d`), so the runtime and settings are built here from that checkout.
+
+**The recipes for that already exist.** `omarchy-pkgs` ships `pkgbuilds/omarchy-dev` and
+`pkgbuilds/omarchy-settings-dev`, pinned to `pkgver=4.0.0.r7026.g51bfd1d` /
+`_commit=51bfd1d`, with `provides`/`conflicts` against the released names and an `OMARCHY_SRC`
+hook that builds from a local tree — the same mechanism the ISO uses with `--local-source`.
+Vendored under `upstream/omarchy-pkgs/` and driven by `scripts/build-omarchy.sh`; the runtime
+depends on `omarchy-settings-dev` and on `omarchy-security-functions` (both satisfied by the
+settings package) and on `omarchy-themes-intros` (from `[omarchy]`).
+
+**`omarchy-other.packages` is not the target set.** Its own header says it exists so the ISO's
+offline mirror holds every package any machine might need (x86, Apple, NVIDIA, Intel). The set a
+machine installs is `omarchy-base.packages` + `omarchy-aarch64.packages` + its platform's
+`omarchy-aarch64-<platform>.packages`, minus `omarchy-x86_64-only.packages` (empty at this pin) —
+which is exactly what `omarchy-pkg-defaults` composes at runtime and what `build-rootfs.sh`
+composes from the checkout at build time.
+
+**`plymouth` is a hard dependency of the settings package.** `omarchy-settings-dev` lists it in
+`depends`, so excluding it leaves an unsatisfiable transaction. It stays installed; the HOOKS
+change below is what keeps it out of the initramfs.
+
+**`linux-modules-cleanup.service`, which `install/config/enable-services.sh` enables, is shipped
+by ALARM's `kernel-modules-hook`** (extra), and that package is in `omarchy-base.packages`
+(recon of the gzipped `extra.files`: `kernel-modules-hook-0.1.7-3-any` → `usr/lib/systemd/system/linux-modules-cleanup.service`).
+It is **not** in the bootstrap tarball or ALARM's kernel, so the enabled unit only exists once the
+Omarchy set is installed.
+
+**The non-Apple HOOKS baseline does not fit this boot chain.** `etc/mkinitcpio.conf.d/00-omarchy-hooks.conf`
+sets `HOOKS=(base udev plymouth keyboard autodetect microcode modconf kms keymap consolefont block encrypt filesystems fsck btrfs-overlayfs)`
+for every platform that is not a Mac. `btrfs-overlayfs` is not even shipped by ALARM's `mkinitcpio`
+(`usr/lib/initcpio/install/` has no `btrfs-overlayfs`), `plymouth` and `encrypt` are unused here,
+and the kernel partition is not an ESP. The proposal therefore folds `aarch64-google` into the
+existing `platform-owned` case, leaving `HOOKS` to `/etc/mkinitcpio.conf` (ALARM ships
+`base systemd autodetect microcode modconf kms keyboard sd-vconsole block filesystems fsck`, the
+set Phase 1 verified builds).
+
+**Build-time gotchas.** pacman's `CheckSpace` cannot resolve a chroot's root mount point on this
+build host ("could not determine root mount point /"), so `scripts/build-omarchy.sh` disables it
+in its throwaway build chroot. `makepkg` needs `--nodeps`: the runtime depends on the whole
+desktop (hyprland, quickshell, sddm…), which is not installed in a packaging chroot, and the
+recipes only copy files.
+
+**The final `/etc/pacman.conf` is Omarchy's template, and it has no `[platform]`.** The last
+post-install leaf copies `default/pacman/aarch64/pacman-edge.conf` and `mirrorlist-edge` over the
+build-time configuration, so the image ends up with `[omarchy]` → `core`/`extra`/`alarm`/`aur`
+via `https://arm-mirror.omarchy.org`, and the local `file:///packages` bundle is dropped — which is
+right (a device should not carry a build-time repository) but means the kernel is no longer
+upgradeable from a configured repo. Providing the device a `[platform]` repository (or a signed
+bundle it can re-index) is Phase 1's remaining publication item meeting Phase 4's device work.
+
+It carries no `IgnorePkg` either, although plan §3's pinning policy is nothing but that. So
+`build-rootfs.sh` adds
+`IgnorePkg = linux-omarchy linux-omarchy-headers linux-omarchy-book linux-omarchy-book-headers`
+inside `[options]` right after that leaf runs (`pacman-conf IgnorePkg` confirms the file parses).
+Pinning this port's own kernel too is deliberate: nothing on the device serves `[platform]` yet
+(above), so an update that could replace it would leave the machine unbootable.
+
+## 9. Build disk budget
+
+The build root lives under `$BUILD_ROOT` (`~/.cache/omarchybook`) and the first full Phase 3
+run died on it: the host filesystem filled to 100% and `omarchy-provision-user` aborted with
+`mkdir: cannot create directory '/home/omarchy/.local': No space left on device`, after the
+Omarchy set had already installed and `omarchy-apply-system` had reported
+`Image build for aarch64-google: deferred 54 hardware steps to first boot`.
+
+Measured on the 56GiB host, when the tree was full:
+
+| Path | Size | Notes |
+|---|---|---|
+| `build-chroot/` | 13.5G | 8.5G of it is `build/`, makepkg's work directory from the Phase 1 kernel build |
+| `work/rootfs-google-asurada/` | 9.1G | the installed desktop set |
+| `pacman-cache/` | 2.4G | persistent and bind-mounted into the rootfs; worth keeping |
+| `src/` | 1.1G | the patched `omarchy` checkout |
+| `platform/` | 116M | the local package bundle |
+
+So **`makepkg` must always be run with `--clean`**. Without it every kernel build leaves its
+whole source tree (8.5G for one Linux tree) behind, owned by the chroot's `builder` (uid 1001, so
+reclaiming it needs `sudo`), and nothing ever removes it because the recipes are only rebuilt when
+their stamp changes. `scripts/build-omarchy.sh` now builds with `-fc`. The Phase 1 kernel build is
+still a manual chroot step and is the one that leaked; whatever `scripts/build-kernel.sh` becomes
+must pass `--clean` too. `scripts/build-rootfs.sh` refuses to start with less than 12GiB free and
+prints the two directories to reclaim.
+
 ## Still open (need a chroot or hardware — not answerable read-only)
 
 1. **Resolved**: the built `depthcharge-tools` installs no kernel/initramfs hooks on Arch (verified
