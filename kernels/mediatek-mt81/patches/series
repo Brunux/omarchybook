@@ -1,0 +1,7 @@
+mt8183-fix-bluetooth.patch
+mt8186-enable-dpi.patch
+mt8186-ASoC-hdmi-codec-Add-event-handler-for-hdmi-TX.patch
+mt8186-SoC-mediatek-mt8186-correct-the-HDMI-widgets.patch
+mt8186-drm-bridge-it6505-Add-audio-support.patch
+mt8186-ASoC-mediatek-mt8186-make-FE-nonatomic-and-no_pcm.patch
+mtk-pmdomain.patch
