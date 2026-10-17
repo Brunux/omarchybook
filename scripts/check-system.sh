@@ -359,12 +359,13 @@ else
 			warn "swap is not on zram; zram-generator's unit may not have run"
 		fi
 	else
-		# The evidence, not a hypothesis: the size of /proc/swaps (a header and
-		# nothing else is a kernel with no active swap, a missing file is one
+		# The evidence, not a hypothesis: how many bytes /proc/swaps reads as
+		# (a header alone is a kernel with no active swap, a missing file is one
 		# built without CONFIG_SWAP), the unit's state and what it last logged.
-		# Both first boots failed here while their diagnostics, minutes later,
-		# showed zram up, so the report has to carry what settles which it was
-		# (docs/recon.md §14).
+		# `test -s` cannot be the test: procfs reports 0 as the size of every
+		# file, so `[ -s /proc/swaps ]` is false on a machine whose zram0 is
+		# active and at priority 300 -- measured, and exactly what failed the
+		# two first boots (docs/recon.md §14).
 		_zs="$(systemctl is-active systemd-zram-setup@zram0.service 2>/dev/null || true)"
 		_zc="$(zramctl --noheadings /dev/zram0 2>/dev/null | tr -s ' \t' ' ' || true)"
 		_zl="$($SUDO journalctl -b --no-pager -u systemd-zram-setup@zram0.service 2>/dev/null |
@@ -416,9 +417,13 @@ else
 		else
 			fail "HYPRLAND_INSTANCE_SIGNATURE is set but hyprctl does not answer"
 		fi
+		# Count every line, and take the pattern from a variable: `n = gsub()`
+		# would report only what the last line held (measured over a two-line
+		# array with one "name": 0 that way, 1 with `+=`), and a regex literal's
+		# \" is not portable between awks.
 		case "$_hm" in
 			'[]' | '') fail "hyprctl reports no monitor: the session has no output" ;;
-			'['*) ok "$(printf '%s' "$_hm" | awk '{ n = gsub(/\"name\":/, "", $0) } END { print n " monitor(s) in the session" }')" ;;
+			'['*) ok "$(printf '%s' "$_hm" | awk -v k='"name"' '{ n += gsub(k, "") } END { print n " monitor(s) in the session" }')" ;;
 			*) info "hyprctl monitors: $(printf '%s' "$_hm" | tr -d '\n')" ;;
 		esac
 		_cerr="$(hyprctl configerrors 2>/dev/null || true)"
@@ -647,10 +652,23 @@ else
 		else
 			warn "no connection profile: the image ships none, connect with nmtui (part of the networkmanager package)"
 		fi
-		_pinned="$($SUDO grep -rl 'interface-name' /etc/NetworkManager/system-connections/ 2>/dev/null || true)"
+		# A profile this machine made for itself is normal, even when it pins an
+		# interface name; one that came with the image is what a release has to
+		# answer for, because that is how a build host's Wi-Fi profile and its
+		# PSK end up in it (recon §13). The image's own manifest dates it.
+		_img_stamp=/var/lib/omarchy/image/target.booted
+		_stamp_mtime="$($SUDO stat -c %Y "$_img_stamp" 2>/dev/null || echo 0)"
+		_pinned=""
+		for _p in $($SUDO grep -rl 'interface-name' /etc/NetworkManager/system-connections/ 2>/dev/null || true); do
+			_prof_mtime="$($SUDO stat -c %Y "$_p" 2>/dev/null || echo 0)"
+			if [ "$_stamp_mtime" -gt 0 ] && [ "$_prof_mtime" -gt "$_stamp_mtime" ]; then
+				continue
+			fi
+			_pinned="$_p"
+		done
 		case "$_pinned" in
-			'') ok "no profile pins an interface name" ;;
-			*) warn "a profile pins interface-name ($_pinned): a profile imported from another system pins wlan0, and the interface here is not wlan0" ;;
+			'') ok "no profile the image shipped pins an interface name" ;;
+			*) warn "a profile that came with the image pins interface-name ($_pinned): a build host's Wi-Fi profile in a release carries its PSK with it" ;;
 		esac
 	else
 		fail "NetworkManager is not active"
@@ -732,10 +750,16 @@ else
 		fail "omarchy-sleep-lock.service is missing: the session will not lock before suspending"
 	fi
 	if in_session; then
-		if pgrep -x omarchy-system-sleep-monitor >/dev/null 2>&1; then
-			ok "the sleep monitor is running in the session"
+		# The unit is the truth here. A process name is truncated to 15
+		# characters (TASK_COMM_LEN) and omarchy-system-sleep-monitor is 27, so
+		# pgrep -x with that name cannot match the monitor however well it runs:
+		# the first report to ask this way called it a failure (recon §14). Ask
+		# systemd, and print the unit's state either way.
+		_sl="$(systemctl --user is-active omarchy-sleep-lock.service 2>/dev/null || true)"
+		if [ "$_sl" = active ]; then
+			ok "the sleep monitor is running (omarchy-sleep-lock.service is active)"
 		else
-			fail "omarchy-system-sleep-monitor is not running: the session will not lock on suspend"
+			fail "omarchy-sleep-lock.service is ${_sl:-not active}: the session will not lock on suspend"
 		fi
 	fi
 	_susp="$(matching "$_dm" 'PM: suspend entry' 5)"
