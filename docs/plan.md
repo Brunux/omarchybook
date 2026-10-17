@@ -207,6 +207,19 @@ Device knowledge that must not be lost in the port (each item cost hardware debu
 - Device directory: `devices/google-asurada/` (board codename, matching `debian-aarch64`).
 - Upstream platform family: `aarch64-google`.
 
+**TODO — rename the kernel's naming from `google` to `mt81`** (asked for on 2026-10-17, before
+anything is renamed). The kernel itself already carries the SoC: `kernels/mediatek-mt81`, release
+`7.2.7-mt81`, `linux-omarchy-book`. What still says `google` is everything around it: the device
+directory (`devices/google-asurada/`), which is also what names every asset the release publishes
+(`google-asurada.img.xz`, `google-asurada.vmlinuz.kpart`, `google-asurada-rootfs.tar.zst`), the
+platform family `aarch64-google` and its packages (`omarchy-google`, `omarchy-google-boot`), the
+payload directory `/usr/lib/omarchy/google-boot/`, and the `google,` device-tree prefix the detector
+keys on. Two of those are deliberately tied to names that are not ours to choose —
+`aarch64-google` is what the vendored upstream patch proposes (a `google,` prefix is what the device
+tree answers) and `devices/google-asurada/` matches the sibling repository — so the rename has to
+decide which of the two layers moves: the artifacts (a `deviceinfo` basename, no upstream effect) or
+the platform (a different family name, and the patch with it).
+
 ---
 
 ## 4. Repository layout
