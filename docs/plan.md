@@ -613,16 +613,22 @@ Phase 7's, on hardware.*
       bind-mounted: 39 ok, 6 warn, 0 FAIL, 13 skip), and the live half stands down off a real boot
       (chroot, or the sandboxed shell this repository is developed in), so what Phase 7 adds is its
       output on hardware.
-- [x] Store the output in `reports/`, one file per boot worth keeping. **Two files from the first
-      card** (2026-10-17): `2026-10-17-first-boot.txt` (95 ok, 3 warn, 2 FAIL, 2 skip — run from
-      tty1, so the two session checks are the two skips) and `2026-10-17-diagnostics.txt`, its
-      journal-level context (`scripts/collect-diagnostics.sh`). Every FAIL and warn is mapped in
-      recon §14, and what the mapping found closes three of them: ufw needs netfilter matches the
+- [x] Store the output in `reports/`, one file per boot worth keeping. **Four files, two cards**
+      (2026-10-17). The first card: `2026-10-17-first-boot.txt` (95 ok, 3 warn, 2 FAIL, 2 skip — run
+      from tty1, so the two session checks are the skips) and its `2026-10-17-diagnostics.txt`. The
+      second card: `2026-10-17-first-boot-second-card.txt` (104 ok, 2 warn, 3 FAIL, 0 skip — run
+      from the desktop session) and `2026-10-17-diagnostics-second-card.txt`. Every FAIL and warn is
+      mapped in recon §14. The first card's mapping closed three: ufw needs netfilter matches the
       kernel was not building, the greeter can never log in without `/var/lib/sddm/state.conf`
       (upstream writes it when it creates the owner at first boot; this port ships the owner in the
       image, so the image writes it), and the `[platform]` key the build lsigns is replaced by the
-      first boot's own `pacman-key --populate` unless it is shipped as a keyring. The next report is
-      taken from the desktop session, which is what closes the two skips.
+      first boot's own `pacman-key --populate` unless it is shipped as a keyring. The second card's
+      report shows all three fixed from the desktop -- SDDM logs in, Hyprland runs, `ufw is active`,
+      keyd has its virtual keyboard, the `[platform]` key is trusted -- and its own three FAILs are
+      one cause plus one open question: the user's home was never seeded from `/etc/skel` (no Omarchy
+      Hyprland config, so no shell, no sleep monitor and no user units; fixed in `build-rootfs.sh`),
+      and a swap zram should have made, which both first boots failed while their diagnostics showed
+      it up minutes later. A third card carries the fix and the next report is the acceptance's.
 
 **Acceptance:** a report from a booted card with no FAIL, and every FAIL mapped to a known
 regression rather than a hypothetical. *The first card's report is what the mapping above is made
