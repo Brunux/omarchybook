@@ -406,6 +406,10 @@ fi
 # and the desktop is a bare compositor (docs/recon.md §14). Existing files are
 # left alone, which is what `useradd -m` does.
 log "Seeding $USERNAME's home from /etc/skel"
+# The account exists in the rootfs, not on this build host, so owner names are
+# resolved inside it and applied numerically.
+_uid="$(chroot "$ROOTFS" id -u "$USERNAME")"
+_gid="$(chroot "$ROOTFS" id -g "$USERNAME")"
 _skel_entries="$(cd "$ROOTFS/etc/skel" && find . -mindepth 1)"
 while IFS= read -r _rel; do
 	[ -n "$_rel" ] || continue
@@ -415,10 +419,10 @@ while IFS= read -r _rel; do
 	if [ -d "$_src" ]; then
 		# find lists a directory before its contents, so parents come first.
 		[ -d "$_dst" ] ||
-			install -d -o "$USERNAME" -g "$USERNAME" -m "$(stat -c %a "$_src")" "$_dst"
+			install -d -o "$_uid" -g "$_gid" -m "$(stat -c %a "$_src")" "$_dst"
 	elif [ ! -e "$_dst" ] && [ ! -L "$_dst" ]; then
 		cp -a "$_src" "$_dst"
-		chown -h "$USERNAME:$USERNAME" "$_dst"
+		chown -h "$_uid:$_gid" "$_dst"
 	fi
 done <<<"$_skel_entries"
 
