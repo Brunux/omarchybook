@@ -15,7 +15,10 @@ third card, written with the second card's fix, is
 file with both outputs in it, which is what a session of running both scripts the same minute looks
 like, and it was split here because this directory is one file per output. The same boot is worth two
 reports when one of them could not see the session, and worth a second pair when a change has to be
-judged against it.
+judged against it. One line was masked before this repository was published: the third card's warning
+named the maintainer's Wi-Fi profile by its SSID, which is his network and not the port's evidence
+(`.../Totalplay-XXXX.nmconnection`); the check stopped naming profiles it did not ship in the same
+commit, so a later report carries the line whole.
 
 ## Making one
 

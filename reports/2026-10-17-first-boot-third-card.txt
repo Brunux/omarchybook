@@ -92,7 +92,7 @@ check-system: 2026-10-17T16:00:00 on 7.2.7-mt81 (as omarchy)
   ok    NetworkManager is active
   ok    NetworkManager manages a Wi-Fi device: wlp1s0:wifi:connected
   ok    2 NetworkManager connection profile(s)
-  warn  a profile pins interface-name (/etc/NetworkManager/system-connections/Totalplay-5BB5.nmconnection): a profile imported from another system pins wlan0, and the interface here is not wlan0
+  warn  a profile pins interface-name (/etc/NetworkManager/system-connections/Totalplay-XXXX.nmconnection): a profile imported from another system pins wlan0, and the interface here is not wlan0
   ok    nmtui is available
   --    sshd is active
   ok    ufw is active
