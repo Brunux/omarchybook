@@ -1,0 +1,669 @@
+collect-diagnostics on asurada (7.2.7-mt81) at 2026-10-17T12:34:28-06:00 as omarchy
+
+## Identity
+$ findmnt -n -o SOURCE,TARGET /
+/dev/mmcblk1p3 /
+$ cat /proc/cmdline
+cros_secure kern_guid=6f77f657-3dfc-e64c-9c7c-65e790f6055d quiet loglevel=2 root=UUID=7c2663d1-fcf6-418f-89b2-833f98398dbf rootwait rw
+$ cat /etc/os-release
+NAME="Omarchy"
+PRETTY_NAME="Omarchy"
+ID=omarchy
+ID_LIKE=arch
+BUILD_ID="4.0.0.r7026.g51bfd1d"
+VERSION_ID="4.0.0.r7026.g51bfd1d"
+ANSI_COLOR="38;2;158;206;106"
+HOME_URL="https://omarchy.org/"
+DOCUMENTATION_URL="https://learn.omacom.io/2/the-omarchy-manual"
+SUPPORT_URL="https://discord.gg/tXFUdasqhY"
+BUG_REPORT_URL="https://github.com/basecamp/omarchy/issues"
+LOGO=omarchy
+  model: Google Hayato rev1
+
+## First boot
+$ ls -la /var/lib/omarchy/image/
+total 12
+drwxr-xr-x 2 root root 4096 Oct 17 12:15 .
+drwxr-xr-x 3 root root 4096 Oct 17 11:53 ..
+-rw-r--r-- 1 root root    0 Oct 17 12:00 lock
+-rw-r--r-- 1 root root   25 Oct 17 11:53 target.booted
+  target.booted: format=1 platform=google 
+$ systemctl status --no-pager omarchy-provision-hardware.service
+○ omarchy-provision-hardware.service - Omarchy first-boot hardware setup deferred from the image build
+     Loaded: loaded (/etc/systemd/system/omarchy-provision-hardware.service; disabled; preset: disabled)
+     Active: inactive (dead)
+
+Oct 17 12:14:02 asurada omarchy-provision-hardware[6184]: Running deferred hardware step install/hardware/platform-setup.sh
+Oct 17 12:15:00 asurada usermod[7685]: add 'alarm' to group 'video'
+Oct 17 12:15:00 asurada usermod[7685]: add 'alarm' to shadow group 'video'
+Oct 17 12:15:00 asurada usermod[7701]: add 'omarchy' to group 'video'
+Oct 17 12:15:00 asurada usermod[7701]: add 'omarchy' to shadow group 'video'
+Oct 17 12:15:00 asurada omarchy-provision-hardware[6184]: Rebuilding the initramfs for the deferred hardware setup
+Oct 17 12:15:32 asurada omarchy-provision-hardware[6184]: Deferred hardware setup is complete
+Oct 17 12:15:32 asurada systemd[1]: omarchy-provision-hardware.service: Deactivated successfully.
+Oct 17 12:15:32 asurada systemd[1]: Finished Omarchy first-boot hardware setup deferred from the image build.
+Oct 17 12:15:32 asurada systemd[1]: omarchy-provision-hardware.service: Consumed 1min 16.461s CPU time over 1min 54.255s wall clock time, 513.3M memory peak.
+  (exit 3)
+
+## Packaging and keys
+  keyring UIDs matching omarchy/book/build:
+    uid           [  full  ] Arch Linux ARM Build System <builder@archlinuxarm.org>
+    uid           [  full  ] Omarchy <pkgs@omarchy.org>
+    uid           [  full  ] Omarchy Book Build <build@omarchybook.invalid>
+  (186 keys in the keyring)
+$ pacman -Q linux-omarchy-book linux-omarchy-book-headers
+error: package 'linux-omarchy-book-headers' was not found
+linux-omarchy-book 7.2.7-2
+  (exit 1)
+  exact-name hits for linux-omarchy/linux-omarchy-headers (pacman -Q matches by pattern): 
+  keyring files shipped for the first boot to populate:
+    total 1804
+    -rw-r--r-- 1 root root    3098 Apr 19 13:12 archlinuxarm.gpg
+    -rw-r--r-- 1 root root       0 Apr 19 13:12 archlinuxarm-revoked
+    -rw-r--r-- 1 root root      44 Apr 19 13:12 archlinuxarm-trusted
+    -rw-r--r-- 1 root root 1811508 Sep  9 04:28 archlinux.gpg
+    -rw-r--r-- 1 root root    1558 Sep  9 04:28 archlinux-revoked
+    -rw-r--r-- 1 root root     220 Sep  9 04:28 archlinux-trusted
+    -rw-r--r-- 1 root root     632 Sep  4 15:13 omarchy.gpg
+    -rw-r--r-- 1 root root     453 Oct 17 11:51 omarchy-platform.gpg
+    -rw-r--r-- 1 root root      44 Oct 17 11:51 omarchy-platform-trusted
+    -rw-r--r-- 1 root root       0 Sep  4 15:13 omarchy-revoked
+    -rw-r--r-- 1 root root      44 Sep  4 15:13 omarchy-trusted
+$ grep -n IgnorePkg\|^\[platform\]\|^\[omarchy\]\|^Server /etc/pacman.conf
+7:IgnorePkg = linux-omarchy linux-omarchy-headers linux-omarchy-book linux-omarchy-book-headers
+24:[omarchy]
+25:Server = https://pkgs.omarchy.org/edge/$arch
+
+## Memory and swap
+$ free -h
+               total        used        free      shared  buff/cache   available
+Mem:           3.7Gi       1.1Gi       2.0Gi        46Mi       992Mi       2.7Gi
+Swap:          3.7Gi          0B       3.7Gi
+$ cat /proc/swaps
+Filename				Type		Size		Used		Priority
+/dev/zram0                              partition	3896316		0		100
+$ zramctl
+NAME       ALGORITHM DISKSIZE DATA COMPR TOTAL STREAMS MOUNTPOINT
+/dev/zram0 zstd          3.7G   4K   64B   20K         [SWAP]
+$ ls -l /etc/systemd/zram-generator.conf /usr/lib/systemd/zram-generator.conf.d/ /etc/systemd/zram-generator.conf.d/
+ls: cannot access '/etc/systemd/zram-generator.conf': No such file or directory
+ls: cannot access '/etc/systemd/zram-generator.conf.d/': No such file or directory
+/usr/lib/systemd/zram-generator.conf.d/:
+total 4
+-rw-r--r-- 1 root root 365 Oct 16 20:15 90-omarchy.conf
+  (exit 2)
+$ cat /etc/systemd/zram-generator.conf
+cat: /etc/systemd/zram-generator.conf: No such file or directory
+  (exit 1)
+$ systemctl status --no-pager systemd-zram-setup@zram0.service
+● systemd-zram-setup@zram0.service - Create swap on /dev/zram0
+     Loaded: loaded (/usr/lib/systemd/system/systemd-zram-setup@.service; static)
+    Drop-In: /run/systemd/generator/systemd-zram-setup@zram0.service.d
+             └─bindings.conf
+     Active: active (exited) since Thu 2026-09-24 17:46:10 CST; 3 weeks 1 day ago
+ Invocation: a4c0978277f2447182c241da7a648fa8
+       Docs: man:zram-generator(8)
+             man:zram-generator.conf(5)
+   Main PID: 5749 (code=exited, status=0/SUCCESS)
+   Mem peak: 3.3M
+        CPU: 41ms
+
+Sep 24 17:46:10 asurada systemd[1]: Starting Create swap on /dev/zram0...
+Sep 24 17:46:10 asurada systemd-makefs[5752]: Formatting /dev/zram0 as swap
+Sep 24 17:46:10 asurada systemd-makefs[5752]: /dev/zram0 successfully formatted as swap (label "zram0", uuid 647fbcac-bcd4-4380-b40c-d294fda08da7)
+Sep 24 17:46:10 asurada systemd[1]: Finished Create swap on /dev/zram0.
+$ systemctl list-units --no-pager --all systemd-zram*
+  UNIT                             LOAD   ACTIVE SUB    DESCRIPTION
+  systemd-zram-setup@zram0.service loaded active exited Create swap on /dev/zram0
+
+Legend: LOAD   → Reflects whether the unit definition was properly loaded.
+        ACTIVE → The high-level unit activation state, i.e. generalization of SUB.
+        SUB    → The low-level unit activation state, values depend on unit type.
+
+1 loaded units listed.
+To show all installed unit files use 'systemctl list-unit-files'.
+$ sudo -n dmesg --level=err,warn | tail -n 40
+[    8.107313] sbs-battery 8-000b: I2C adapter does not support I2C_FUNC_SMBUS_READ_BLOCK_DATA.
+               Fallback method does not support PEC.
+[    8.111654] sbs-battery 8-000b: Unknown chemistry: OTC0
+[    8.203254] i2c_hid_of 0-0010: supply vddl not found, using dummy regulator
+[    8.282097] power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+[    8.283158] power_supply sbs-8-000b: driver failed to report `voltage_now' property: -6
+[    8.427731] power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+[    8.428511] power_supply sbs-8-000b: driver failed to report `energy_full' property: -6
+[    8.431449] i2c_hid_of 0-0010: i2c_hid_get_input: IRQ triggered but there's no data
+[    8.438059] rt5682 1-001a: Using default DAI clk names: rt5682-dai-wclk, rt5682-dai-bclk
+[    8.471725] power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+[    8.472976] power_supply sbs-8-000b: driver failed to report `charge_full_design' property: -6
+[    8.547231] power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+[    8.622283] power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+[    8.703560] power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+[    8.781400] power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+[    9.087207] rt5682 1-001a: ASoC: source widget I2S1 overwritten
+[  101.327218] power_supply_format_property: 4 callbacks suppressed
+[  101.327226] power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+[  101.397709] power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+[  101.467181] power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+[  101.529782] power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+[  101.599227] power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+[  101.676808] power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+[  101.741939] power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+[  101.808543] power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+[  101.876821] power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+[  101.967350] power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+[  126.955710] power_supply_format_property: 1 callbacks suppressed
+[  126.955729] power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+[  127.060725] power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+[  127.061937] power_supply sbs-8-000b: driver failed to report `energy_full_design' property: -6
+[  127.130934] power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+[  127.205488] power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+[  127.279839] power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+[  127.351170] power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+[  127.424942] power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+[  127.488824] power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+[  127.562628] power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+[  147.191122]  Playback_12: ASoC: no backend DAIs enabled for Playback_12, possibly missing ALSA mixer-based routing or UCM profile
+
+## Session (sddm)
+$ systemctl status --no-pager sddm.service
+● sddm.service - Simple Desktop Display Manager
+     Loaded: loaded (/usr/lib/systemd/system/sddm.service; enabled; preset: disabled)
+     Active: active (running) since Sat 2026-10-17 12:15:32 CST; 18min ago
+ Invocation: ee020d7652eb4ded89cb37d0c4fb1496
+       Docs: man:sddm(1)
+             man:sddm.conf(5)
+   Main PID: 12807 (sddm)
+      Tasks: 2 (limit: 4717)
+     Memory: 21.6M (peak: 41.7M)
+        CPU: 305ms
+     CGroup: /system.slice/sddm.service
+             └─12807 /usr/bin/sddm
+
+Oct 17 12:15:45 asurada sddm-helper[12979]: [PAM] Starting...
+Oct 17 12:15:45 asurada sddm-helper[12979]: [PAM] Authenticating...
+Oct 17 12:15:45 asurada sddm-helper[12979]: [PAM] Preparing to converse...
+Oct 17 12:15:45 asurada sddm-helper[12979]: [PAM] Conversation with 1 messages
+Oct 17 12:15:45 asurada sddm-helper[12979]: [PAM] returning.
+Oct 17 12:15:45 asurada sddm[12807]: Authentication for user  "omarchy"  successful
+Oct 17 12:15:45 asurada sddm-helper[12979]: pam_unix(sddm:session): session opened for user omarchy(uid=1001) by omarchy(uid=0)
+Oct 17 12:15:46 asurada sddm[12807]: Auth: sddm-helper exited successfully
+Oct 17 12:15:46 asurada sddm[12807]: Greeter stopped. SDDM::Auth::HELPER_SUCCESS
+Oct 17 12:15:46 asurada sddm[12807]: Session started true
+$ sudo -n journalctl -b -u sddm --no-pager | tail -n 60
+Oct 17 12:15:32 asurada systemd[1]: Started Simple Desktop Display Manager.
+Oct 17 12:15:32 asurada sddm[12807]: Initializing...
+Oct 17 12:15:32 asurada sddm[12807]: Starting...
+Oct 17 12:15:32 asurada sddm[12807]: Logind interface found
+Oct 17 12:15:32 asurada sddm[12807]: Adding new display...
+Oct 17 12:15:32 asurada sddm[12807]: Loaded empty theme configuration
+Oct 17 12:15:32 asurada sddm[12807]: Using VT 1
+Oct 17 12:15:32 asurada sddm[12807]: Display server started.
+Oct 17 12:15:32 asurada sddm[12807]: Socket server starting...
+Oct 17 12:15:32 asurada sddm[12807]: Socket server started.
+Oct 17 12:15:32 asurada sddm[12807]: Loading theme configuration from "/usr/share/sddm/themes/omarchy/theme.conf"
+Oct 17 12:15:32 asurada sddm[12807]: Greeter starting...
+Oct 17 12:15:32 asurada sddm-helper[12832]: [PAM] Starting...
+Oct 17 12:15:32 asurada sddm-helper[12832]: pam_unix(sddm-greeter:session): session opened for user sddm(uid=958) by (uid=0)
+Oct 17 12:15:32 asurada sddm-helper[12832]: [PAM] Authenticating...
+Oct 17 12:15:32 asurada sddm-helper[12832]: [PAM] returning.
+Oct 17 12:15:32 asurada sddm[12807]: Greeter session started successfully
+Oct 17 12:15:36 asurada sddm[12807]: Message received from greeter: Connect
+Oct 17 12:15:45 asurada sddm[12807]: Message received from greeter: Login
+Oct 17 12:15:45 asurada sddm[12807]: Reading from "/usr/local/share/wayland-sessions/omarchy.desktop"
+Oct 17 12:15:45 asurada sddm[12807]: Session "/usr/local/share/wayland-sessions/omarchy.desktop" selected, command: "uwsm start -g -1 -e -D Hyprland hyprland.desktop" for VT 2
+Oct 17 12:15:45 asurada sddm-helper[12979]: [PAM] Starting...
+Oct 17 12:15:45 asurada sddm-helper[12979]: [PAM] Authenticating...
+Oct 17 12:15:45 asurada sddm-helper[12979]: [PAM] Preparing to converse...
+Oct 17 12:15:45 asurada sddm-helper[12979]: [PAM] Conversation with 1 messages
+Oct 17 12:15:45 asurada sddm-helper[12979]: [PAM] returning.
+Oct 17 12:15:45 asurada sddm[12807]: Authentication for user  "omarchy"  successful
+Oct 17 12:15:45 asurada sddm-helper[12979]: pam_unix(sddm:session): session opened for user omarchy(uid=1001) by omarchy(uid=0)
+Oct 17 12:15:46 asurada sddm[12807]: Auth: sddm-helper exited successfully
+Oct 17 12:15:46 asurada sddm[12807]: Greeter stopped. SDDM::Auth::HELPER_SUCCESS
+Oct 17 12:15:46 asurada sddm[12807]: Session started true
+  greeter, compositor and PAM lines:
+    Oct 17 12:21:15 asurada uwsm_hyprland.desktop[13236]: DEBUG ]: wayland: configure toplevel with 990x550
+    Oct 17 12:21:15 asurada uwsm_hyprland.desktop[13236]: DEBUG ]: wayland window: configure surface with 144
+    Oct 17 12:21:15 asurada uwsm_hyprland.desktop[13236]: DEBUG ]: wayland: configure toplevel with 990x550
+    Oct 17 12:21:15 asurada uwsm_hyprland.desktop[13236]: DEBUG ]: wayland window: configure surface with 145
+    Oct 17 12:21:15 asurada uwsm_hyprland.desktop[13236]: DEBUG ]: wayland: configure toplevel with 990x550
+    Oct 17 12:21:15 asurada uwsm_hyprland.desktop[13236]: DEBUG ]: wayland window: configure surface with 160
+    Oct 17 12:21:16 asurada uwsm_hyprland.desktop[13236]: DEBUG ]: wayland: configure toplevel with 990x550
+    Oct 17 12:21:16 asurada uwsm_hyprland.desktop[13236]: DEBUG ]: wayland window: configure surface with 167
+    Oct 17 12:21:25 asurada uwsm_hyprland.desktop[13236]: DEBUG ]: wayland: configure toplevel with 990x550
+    Oct 17 12:21:25 asurada uwsm_hyprland.desktop[13236]: DEBUG ]: wayland window: configure surface with 248
+    Oct 17 12:21:26 asurada uwsm_hyprland.desktop[13236]: DEBUG ]: wayland: configure toplevel with 990x550
+    Oct 17 12:21:26 asurada uwsm_hyprland.desktop[13236]: DEBUG ]: wayland window: configure surface with 251
+    Oct 17 12:21:26 asurada uwsm_hyprland.desktop[13236]: DEBUG ]: wayland: configure toplevel with 990x550
+    Oct 17 12:21:26 asurada uwsm_hyprland.desktop[13236]: DEBUG ]: wayland window: configure surface with 266
+    Oct 17 12:21:27 asurada uwsm_hyprland.desktop[13236]: DEBUG ]: wayland: configure toplevel with 990x550
+    Oct 17 12:21:27 asurada uwsm_hyprland.desktop[13236]: DEBUG ]: wayland window: configure surface with 269
+    Oct 17 12:21:34 asurada uwsm_hyprland.desktop[13236]: DEBUG ]: wayland: configure toplevel with 990x550
+    Oct 17 12:21:34 asurada uwsm_hyprland.desktop[13236]: DEBUG ]: wayland window: configure surface with 312
+    Oct 17 12:21:38 asurada uwsm_hyprland.desktop[13236]: DEBUG ]: wayland: configure toplevel with 990x550
+    Oct 17 12:21:38 asurada uwsm_hyprland.desktop[13236]: DEBUG ]: wayland window: configure surface with 315
+    Oct 17 12:21:41 asurada uwsm_hyprland.desktop[13236]: DEBUG ]: wayland: configure toplevel with 990x550
+    Oct 17 12:21:41 asurada uwsm_hyprland.desktop[13236]: DEBUG ]: wayland window: configure surface with 340
+    Oct 17 12:21:41 asurada uwsm_hyprland.desktop[13236]: ERR ]: Invalid key up event (stray release event?)
+    Oct 17 12:25:14 asurada sudo[13571]: pam_unix(sudo:session): session opened for user root(uid=0) by omarchy(uid=1001)
+    Oct 17 12:25:14 asurada sudo[13571]: pam_unix(sudo:session): session closed for user root
+    Oct 17 12:27:06 asurada sudo[13618]: pam_unix(sudo:session): session opened for user root(uid=0) by omarchy(uid=1001)
+    Oct 17 12:27:06 asurada sudo[13618]: pam_unix(sudo:session): session closed for user root
+    Oct 17 12:28:53 asurada sudo[13628]: pam_unix(sudo:session): session opened for user root(uid=0) by omarchy(uid=1001)
+    Oct 17 12:28:53 asurada sudo[13628]: pam_unix(sudo:session): session closed for user root
+    Oct 17 12:29:01 asurada sudo[13633]: pam_unix(sudo:session): session opened for user root(uid=0) by omarchy(uid=1001)
+    Oct 17 12:29:01 asurada sudo[13633]: pam_unix(sudo:session): session closed for user root
+    Oct 17 12:30:49 asurada sudo[13647]: pam_unix(sudo:session): session opened for user root(uid=0) by omarchy(uid=1001)
+    Oct 17 12:30:49 asurada sudo[13647]: pam_unix(sudo:session): session closed for user root
+    Oct 17 12:31:28 asurada sudo[13655]: pam_unix(sudo:session): session opened for user root(uid=0) by omarchy(uid=1001)
+    Oct 17 12:31:28 asurada sudo[13655]: pam_unix(sudo:session): session closed for user root
+    Oct 17 12:32:12 asurada sudo[13702]: pam_unix(sudo:session): session opened for user root(uid=0) by omarchy(uid=1001)
+    Oct 17 12:32:12 asurada sudo[13702]: pam_unix(sudo:session): session closed for user root
+    Oct 17 12:32:12 asurada sudo[13709]: pam_unix(sudo:session): session opened for user root(uid=0) by omarchy(uid=1001)
+    Oct 17 12:32:12 asurada sudo[13709]: pam_unix(sudo:session): session closed for user root
+    Oct 17 12:32:12 asurada sudo[13742]: pam_unix(sudo:session): session opened for user root(uid=0) by omarchy(uid=1001)
+    Oct 17 12:32:12 asurada sudo[13742]: pam_unix(sudo:session): session closed for user root
+    Oct 17 12:32:13 asurada sudo[13797]: pam_unix(sudo:session): session opened for user root(uid=0) by omarchy(uid=1001)
+    Oct 17 12:32:13 asurada sudo[13797]: pam_unix(sudo:session): session closed for user root
+    Oct 17 12:32:13 asurada sudo[13891]: pam_unix(sudo:session): session opened for user root(uid=0) by omarchy(uid=1001)
+    Oct 17 12:32:13 asurada sudo[13891]: pam_unix(sudo:session): session closed for user root
+    Oct 17 12:33:31 asurada sudo[14390]: pam_unix(sudo:session): session opened for user root(uid=0) by omarchy(uid=1001)
+    Oct 17 12:33:31 asurada sudo[14390]: pam_unix(sudo:session): session closed for user root
+    Oct 17 12:33:39 asurada sudo[14394]: pam_unix(sudo:session): session opened for user root(uid=0) by omarchy(uid=1001)
+    Oct 17 12:33:39 asurada sudo[14394]: pam_unix(sudo:session): session closed for user root
+    Oct 17 12:34:28 asurada sudo[14404]: pam_unix(sudo:session): session opened for user root(uid=0) by omarchy(uid=1001)
+    Oct 17 12:34:28 asurada sudo[14404]: pam_unix(sudo:session): session closed for user root
+    Oct 17 12:34:28 asurada sudo[14421]: pam_unix(sudo:session): session opened for user root(uid=0) by omarchy(uid=1001)
+    Oct 17 12:34:28 asurada sudo[14421]: pam_unix(sudo:session): session closed for user root
+    Oct 17 12:34:28 asurada sudo[14429]: pam_unix(sudo:session): session opened for user root(uid=0) by omarchy(uid=1001)
+    Oct 17 12:34:29 asurada sudo[14429]: pam_unix(sudo:session): session closed for user root
+    Oct 17 12:34:30 asurada sudo[14450]: pam_unix(sudo:session): session opened for user root(uid=0) by omarchy(uid=1001)
+    Oct 17 12:34:30 asurada sudo[14450]: pam_unix(sudo:session): session closed for user root
+    Oct 17 12:34:30 asurada sudo[14456]: pam_unix(sudo:session): session opened for user root(uid=0) by omarchy(uid=1001)
+    Oct 17 12:34:30 asurada sudo[14456]: pam_unix(sudo:session): session closed for user root
+    Oct 17 12:34:30 asurada sudo[14461]: pam_unix(sudo:session): session opened for user root(uid=0) by omarchy(uid=1001)
+  greeter runtime dirs and compositor log:
+    total 228
+    drwx------ 2 omarchy omarchy    120 Oct 17 12:15 .
+    drwx------ 3 omarchy omarchy     60 Oct 17 12:15 ..
+    -rw-r--r-- 1 omarchy omarchy     16 Oct 17 12:15 hyprland.lock
+    -rw-r--r-- 1 omarchy omarchy 225563 Oct 17 12:33 hyprland.log
+    srwxr-xr-x 1 omarchy omarchy      0 Oct 17 12:15 .socket2.sock
+    srwxr-xr-x 1 omarchy omarchy      0 Oct 17 12:15 .socket.sock
+    --- /run/user/1001/hypr/efb50993780079460b0cbed1363e2166a2de1d9f_1792260949_731075715/hyprland.log
+    DEBUG from aquamarine ]: [libinput] event2  - gesture: [1fg] event GESTURE_STATE_UNKNOWN → GESTURE_EVENT_HOLD_TIMEOUT → GESTURE_STATE_HOLD
+    DEBUG from aquamarine ]: [libinput] event2  - tap: touch 0 (TOUCH_UPDATE), tap state TAP_STATE_TOUCH → TAP_EVENT_MOTION → TAP_STATE_DEAD
+    DEBUG from aquamarine ]: [libinput] event2  - gesture: [1fg] event GESTURE_STATE_HOLD → GESTURE_EVENT_CANCEL → GESTURE_STATE_NONE
+    DEBUG from aquamarine ]: [libinput] event2  - gesture: [1fg] event GESTURE_STATE_HOLD → GESTURE_EVENT_POINTER_MOTION_START → GESTURE_STATE_POINTER_MOTION
+    DEBUG from aquamarine ]: [libinput] event2  - gesture: [1fg] state GESTURE_STATE_HOLD → GESTURE_STATE_POINTER_MOTION
+    DEBUG from aquamarine ]: [libinput] event2  - button state: touch 0 from BUTTON_STATE_AREA    event BUTTON_EVENT_UP          to BUTTON_STATE_NONE   
+    DEBUG from aquamarine ]: [libinput] event2  - gesture: [1fg] event GESTURE_STATE_POINTER_MOTION → GESTURE_EVENT_END → GESTURE_STATE_NONE
+    DEBUG from aquamarine ]: [libinput] event2  - tap: touch 0 (TOUCH_END), tap state TAP_STATE_DEAD → TAP_EVENT_RELEASE → TAP_STATE_IDLE
+    DEBUG from aquamarine ]: [libinput] event2  - pressure: begin touch 0
+    DEBUG from aquamarine ]: [libinput] event2  - button state: touch 0 from BUTTON_STATE_NONE    event BUTTON_EVENT_IN_AREA     to BUTTON_STATE_AREA   
+    DEBUG from aquamarine ]: [libinput] event2  - tap: touch 0 (TOUCH_BEGIN), tap state TAP_STATE_IDLE → TAP_EVENT_TOUCH → TAP_STATE_TOUCH
+    DEBUG from aquamarine ]: [libinput] event2  - gesture: [1fg] event GESTURE_STATE_NONE → GESTURE_EVENT_FINGER_DETECTED → GESTURE_STATE_UNKNOWN
+    DEBUG from aquamarine ]: [libinput] event2  - gesture: [1fg] state GESTURE_STATE_NONE → GESTURE_STATE_UNKNOWN
+    DEBUG from aquamarine ]: [libinput] event2  - gesture: [1fg] event GESTURE_STATE_UNKNOWN → GESTURE_EVENT_HOLD_TIMEOUT → GESTURE_STATE_HOLD
+    DEBUG from aquamarine ]: [libinput] event2  - tap: touch 0 (TOUCH_UPDATE), tap state TAP_STATE_TOUCH → TAP_EVENT_MOTION → TAP_STATE_DEAD
+    DEBUG from aquamarine ]: [libinput] event2  - gesture: [1fg] event GESTURE_STATE_HOLD → GESTURE_EVENT_CANCEL → GESTURE_STATE_NONE
+    DEBUG from aquamarine ]: [libinput] event2  - gesture: [1fg] event GESTURE_STATE_HOLD → GESTURE_EVENT_POINTER_MOTION_START → GESTURE_STATE_POINTER_MOTION
+    DEBUG from aquamarine ]: [libinput] event2  - gesture: [1fg] state GESTURE_STATE_HOLD → GESTURE_STATE_POINTER_MOTION
+    DEBUG from aquamarine ]: [libinput] event2  - button state: touch 0 from BUTTON_STATE_AREA    event BUTTON_EVENT_UP          to BUTTON_STATE_NONE   
+    DEBUG from aquamarine ]: [libinput] event2  - gesture: [1fg] event GESTURE_STATE_POINTER_MOTION → GESTURE_EVENT_END → GESTURE_STATE_NONE
+    DEBUG from aquamarine ]: [libinput] event2  - tap: touch 0 (TOUCH_END), tap state TAP_STATE_DEAD → TAP_EVENT_RELEASE → TAP_STATE_IDLE
+    DEBUG from aquamarine ]: [libinput] event2  - pressure: begin touch 0
+    DEBUG from aquamarine ]: [libinput] event2  - button state: touch 0 from BUTTON_STATE_NONE    event BUTTON_EVENT_IN_AREA     to BUTTON_STATE_AREA   
+    DEBUG from aquamarine ]: [libinput] event2  - tap: touch 0 (TOUCH_BEGIN), tap state TAP_STATE_IDLE → TAP_EVENT_TOUCH → TAP_STATE_TOUCH
+    DEBUG from aquamarine ]: [libinput] event2  - gesture: [1fg] event GESTURE_STATE_NONE → GESTURE_EVENT_FINGER_DETECTED → GESTURE_STATE_UNKNOWN
+    DEBUG from aquamarine ]: [libinput] event2  - gesture: [1fg] state GESTURE_STATE_NONE → GESTURE_STATE_UNKNOWN
+    DEBUG from aquamarine ]: [libinput] event2  - gesture: [1fg] event GESTURE_STATE_UNKNOWN → GESTURE_EVENT_HOLD_TIMEOUT → GESTURE_STATE_HOLD
+    DEBUG from aquamarine ]: [libinput] event2  - tap: touch -1 (), tap state TAP_STATE_TOUCH → TAP_EVENT_TIMEOUT → TAP_STATE_HOLD
+    DEBUG from aquamarine ]: [libinput] event2  - gesture: [1fg] event GESTURE_STATE_HOLD → GESTURE_EVENT_CANCEL → GESTURE_STATE_NONE
+    DEBUG from aquamarine ]: [libinput] event2  - gesture: [1fg] event GESTURE_STATE_HOLD → GESTURE_EVENT_POINTER_MOTION_START → GESTURE_STATE_POINTER_MOTION$ cat /usr/share/sddm/hyprland.lua
+-- Minimal Hyprland config for the SDDM Wayland greeter.
+-- SDDM starts the greeter itself after the compositor is ready.
+
+-- The layout resolution below is deliberately duplicated from
+-- default/hypr/input.lua. The greeter runs as the sddm user and starts from
+-- this file directly, so it never goes through default/hypr/bootstrap.lua --
+-- which builds package.path from $HOME and therefore can't set up require()
+-- here. Keep the two in sync.
+local function read_vconsole()
+  local values = {}
+  local file = io.open("/etc/vconsole.conf", "r")
+  if not file then
+    return values
+  end
+  for line in file:lines() do
+    local key, value = line:match("^%s*([%w_]+)%s*=%s*(.-)%s*$")
+    if key and value then
+      value = value:gsub("%s+#.*$", "")
+      value = value:gsub('^"(.*)"$', "%1")
+      value = value:gsub("^'(.*)'$", "%1")
+      values[key] = value
+    end
+  end
+  file:close()
+  return values
+end
+
+-- Layouts that can't type Latin letters. Keep in sync with the list in
+-- etc/mkinitcpio.conf.d/omarchy_hooks.conf and default/hypr/input.lua.
+local non_latin_layouts =
+  " af am ara bd bg by et ge gr il in iq ir kg kh kz la lk mk mm mn mv np rs ru sy th tj ua "
+
+local vconsole = read_vconsole()
+local kb_layout = vconsole.XKBLAYOUT or "us"
+local kb_variant = vconsole.XKBVARIANT or ""
+local kb_options = ""
+
+-- A greeter that can't type Latin letters can't take a password either, so a
+-- non-Latin layout gets us in front, reachable back with Left Alt + Right Alt.
+if non_latin_layouts:find(" " .. kb_layout:match("^[^,]*") .. " ", 1, true) then
+  kb_layout = "us," .. kb_layout
+  kb_variant = "," .. kb_variant
+  kb_options = "grp:alts_toggle"
+end
+
+hl.config({
+  input = {
+    kb_layout = kb_layout,
+    kb_variant = kb_variant,
+    kb_options = kb_options,
+  },
+
+  misc = {
+    disable_hyprland_logo = true,
+    disable_splash_rendering = true,
+    background_color = "rgb(000000)",
+    force_default_wallpaper = 0,
+  },
+
+  animations = {
+    enabled = false,
+  },
+})
+$ ls -l /usr/share/sddm/hyprland.lua /usr/share/wayland-sessions/ /usr/share/sddm/themes/
+-rw-r--r-- 1 root root 1990 Oct 16 20:15 /usr/share/sddm/hyprland.lua
+
+/usr/share/sddm/themes/:
+total 16
+drwxr-xr-x 3 root root 4096 Oct 17 11:59 elarun
+drwxr-xr-x 2 root root 4096 Oct 17 11:59 maldives
+drwxr-xr-x 6 root root 4096 Oct 17 11:59 maya
+drwxr-xr-x 2 root root 4096 Oct 17 11:59 omarchy
+
+/usr/share/wayland-sessions/:
+total 8
+-rw-r--r-- 1 root root 191 Oct 15 06:03 hyprland.desktop
+-rw-r--r-- 1 root root 202 Oct 15 06:03 hyprland-uwsm.desktop
+$ cat /etc/sddm.conf.d/10-wayland.conf /etc/sddm.conf.d/10-theme.conf
+[General]
+DisplayServer=wayland
+
+[Wayland]
+CompositorCommand=start-hyprland -- --config /usr/share/sddm/hyprland.lua
+[Theme]
+Current=omarchy
+$ loginctl list-sessions --no-legend
+2 1001 omarchy seat0 12979 user    tty2 no -
+3 1001 omarchy -     12985 manager -    no -
+$ ls -la /run/user/
+total 0
+drwxr-xr-x  3 root    root     60 Oct 17 12:15 .
+drwxr-xr-x 28 root    root    720 Oct 17 12:15 ..
+drwx------ 15 omarchy omarchy 440 Oct 17 12:15 1001
+  accounts (name, uid, home, shell):
+    alarm:1000:/home/alarm:/bin/bash
+    omarchy:1001:/home/omarchy:/bin/bash
+    sddm:958:/var/lib/sddm:/usr/bin/nologin
+$ ls -la /home/omarchy/
+total 92
+drwx------ 18 omarchy omarchy 4096 Oct 17 12:21 .
+drwxr-xr-x  5 root    root    4096 Oct 17 11:54 ..
+drwxr-xr-x  3 omarchy omarchy 4096 Oct 17 12:00 .agents
+-rw-------  1 omarchy omarchy    6 Oct 17 12:21 .bash_history
+-rw-r--r--  1 omarchy omarchy   21 Sep 20 07:15 .bash_logout
+-rw-r--r--  1 omarchy omarchy   57 Sep 20 07:15 .bash_profile
+-rw-r--r--  1 omarchy omarchy  172 Sep 20 07:15 .bashrc
+drwxr-xr-x  4 omarchy omarchy 4096 Oct 17 12:15 .cache
+drwxr-xr-x  3 omarchy omarchy 4096 Oct 17 12:00 .claude
+drwxr-xr-x  3 omarchy omarchy 4096 Oct 17 12:00 .codex
+drwxr-xr-x 19 omarchy omarchy 4096 Oct 17 12:15 .config
+drwxr-xr-x  2 omarchy omarchy 4096 Oct 17 12:15 Documents
+drwxr-xr-x  2 omarchy omarchy 4096 Oct 17 12:00 Downloads
+drwxr-xr-x  3 omarchy omarchy 4096 Oct 17 12:00 .gemini
+drwxr-xr-x  3 omarchy omarchy 4096 Oct 17 12:00 .hermes
+drwxr-xr-x  5 omarchy omarchy 4096 Oct 17 12:00 .local
+drwxr-xr-x  2 omarchy omarchy 4096 Oct 17 12:15 Music
+drwxr-xr-x  3 omarchy omarchy 4096 Oct 17 12:00 .pi
+drwxr-xr-x  2 omarchy omarchy 4096 Oct 17 12:00 Pictures
+drwxr-xr-x  2 omarchy omarchy 4096 Oct 17 12:15 Projects
+drwxr-xr-x  2 omarchy omarchy 4096 Oct 17 12:00 Videos
+drwxr-xr-x  3 omarchy omarchy 4096 Oct 17 12:00 Work
+-rw-r--r--  1 omarchy omarchy  199 Oct 17 12:00 .XCompose
+$ ls -la /home/omarchy/.config/
+total 84
+drwxr-xr-x 19 omarchy omarchy 4096 Oct 17 12:15 .
+drwx------ 18 omarchy omarchy 4096 Oct 17 12:21 ..
+drwxr-xr-x  8 omarchy omarchy 4096 Oct 17 12:00 BraveSoftware
+drwxr-xr-x  3 omarchy omarchy 4096 Oct 17 12:00 btop
+drwxr-xr-x  3 omarchy omarchy 4096 Oct 17 12:00 chromium
+drwx------  2 omarchy omarchy 4096 Oct 17 12:15 dconf
+drwx------  3 omarchy omarchy 4096 Oct 17 12:15 fcitx
+drwxr-xr-x  3 omarchy omarchy 4096 Oct 17 12:00 fcitx5
+drwxr-xr-x  3 omarchy omarchy 4096 Oct 17 12:00 google-chrome
+drwxr-xr-x  3 omarchy omarchy 4096 Oct 17 12:00 google-chrome-beta
+drwxr-xr-x  3 omarchy omarchy 4096 Oct 17 12:00 google-chrome-unstable
+drwxr-xr-x  2 omarchy omarchy 4096 Oct 17 12:00 gtk-3.0
+drwxr-xr-x  2 omarchy omarchy 4096 Oct 17 12:15 hypr
+drwx------  3 omarchy omarchy 4096 Oct 17 12:15 ibus
+drwxr-xr-x  3 omarchy omarchy 4096 Oct 17 12:00 microsoft-edge
+drwxr-xr-x  3 omarchy omarchy 4096 Oct 17 12:00 microsoft-edge-dev
+-rw-r--r--  1 omarchy omarchy  248 Oct 17 12:00 mimeapps.list
+drwxr-xr-x  2 omarchy omarchy 4096 Oct 17 12:00 mise
+drwxr-xr-x  3 omarchy omarchy 4096 Oct 17 12:00 omarchy
+drwx------  2 omarchy omarchy 4096 Oct 17 12:32 pulse
+-rw-------  1 omarchy omarchy  645 Oct 17 12:15 user-dirs.dirs
+$ ls -la /home/omarchy/.config/hypr/
+total 24
+drwxr-xr-x  2 omarchy omarchy  4096 Oct 17 12:15 .
+drwxr-xr-x 19 omarchy omarchy  4096 Oct 17 12:15 ..
+-rw-r--r--  1 omarchy omarchy 12644 Oct 17 12:21 hyprland.lua
+  user manager state for the desktop user:
+$ loginctl show-user omarchy
+UID=1001
+GID=1001
+Name=omarchy
+Timestamp=Sat 2026-10-17 12:15:45 CST
+TimestampMonotonic=140047160
+RuntimePath=/run/user/1001
+Service=user@1001.service
+Slice=user-1001.slice
+Display=2
+State=active
+Sessions=3 2
+IdleHint=no
+IdleSinceHint=0
+IdleSinceHintMonotonic=0
+Linger=no
+
+## Input and keyd
+$ systemctl status --no-pager keyd.service
+● keyd.service - key remapping daemon
+     Loaded: loaded (/usr/lib/systemd/system/keyd.service; enabled; preset: disabled)
+     Active: active (running) since Sat 2026-10-17 12:15:00 CST; 19min ago
+ Invocation: 4e48c69ad1dc44d6b73b1f279b5556c4
+   Main PID: 7676 (keyd)
+      Tasks: 1 (limit: 4717)
+     Memory: 35.9M (peak: 92.8M)
+        CPU: 805ms
+     CGroup: /system.slice/keyd.service
+             └─7676 /usr/bin/keyd
+
+Oct 17 12:15:00 asurada keyd[7676]: Starting keyd v2.6.0 ()
+Oct 17 12:15:00 asurada keyd[7676]: WARNING: 04f3:2e70:8f4386b8 appears to be a trackpad, which is current unsupported. Mouse movement is likely to break(YMMV)
+Oct 17 12:15:00 asurada keyd[7676]: DEVICE: ignoring 04f3:2e70:8f4386b8  (hid-over-i2c 04F3:2E70 Stylus)
+Oct 17 12:15:00 asurada keyd[7676]: WARNING: 04f3:2e70:0d327aa1 appears to be a trackpad, which is current unsupported. Mouse movement is likely to break(YMMV)
+Oct 17 12:15:00 asurada keyd[7676]: DEVICE: ignoring 04f3:2e70:0d327aa1  (hid-over-i2c 04F3:2E70)
+Oct 17 12:15:00 asurada keyd[7676]: DEVICE: ignoring 0000:0000:3c5e67dc  (mt8192_mt6359_rt1015p_rt5682 Headset Jack)
+Oct 17 12:15:00 asurada keyd[7676]: WARNING: 04f3:011f:6a509ca1 appears to be a trackpad, which is current unsupported. Mouse movement is likely to break(YMMV)
+Oct 17 12:15:00 asurada keyd[7676]: DEVICE: ignoring 04f3:011f:6a509ca1  (Elan Touchpad)
+Oct 17 12:15:00 asurada keyd[7676]: DEVICE: ignoring 0000:0000:c68a2d8e  (cros_ec_buttons)
+Oct 17 12:15:00 asurada keyd[7676]: DEVICE: match    0000:0000:af5c732c  /etc/keyd/default.conf        (cros_ec)
+$ sudo -n journalctl -b -u keyd --no-pager | tail -n 30
+Oct 17 12:15:00 asurada systemd[1]: Started key remapping daemon.
+Oct 17 12:15:00 asurada keyd[7676]: CONFIG: parsing /etc/keyd/default.conf
+Oct 17 12:15:00 asurada keyd[7676]: Starting keyd v2.6.0 ()
+Oct 17 12:15:00 asurada keyd[7676]: WARNING: 04f3:2e70:8f4386b8 appears to be a trackpad, which is current unsupported. Mouse movement is likely to break(YMMV)
+Oct 17 12:15:00 asurada keyd[7676]: DEVICE: ignoring 04f3:2e70:8f4386b8  (hid-over-i2c 04F3:2E70 Stylus)
+Oct 17 12:15:00 asurada keyd[7676]: WARNING: 04f3:2e70:0d327aa1 appears to be a trackpad, which is current unsupported. Mouse movement is likely to break(YMMV)
+Oct 17 12:15:00 asurada keyd[7676]: DEVICE: ignoring 04f3:2e70:0d327aa1  (hid-over-i2c 04F3:2E70)
+Oct 17 12:15:00 asurada keyd[7676]: DEVICE: ignoring 0000:0000:3c5e67dc  (mt8192_mt6359_rt1015p_rt5682 Headset Jack)
+Oct 17 12:15:00 asurada keyd[7676]: WARNING: 04f3:011f:6a509ca1 appears to be a trackpad, which is current unsupported. Mouse movement is likely to break(YMMV)
+Oct 17 12:15:00 asurada keyd[7676]: DEVICE: ignoring 04f3:011f:6a509ca1  (Elan Touchpad)
+Oct 17 12:15:00 asurada keyd[7676]: DEVICE: ignoring 0000:0000:c68a2d8e  (cros_ec_buttons)
+Oct 17 12:15:00 asurada keyd[7676]: DEVICE: match    0000:0000:af5c732c  /etc/keyd/default.conf        (cros_ec)
+  input devices (name and handler):
+    N: Name="cros_ec"
+    H: Handlers=sysrq kbd event0 
+    N: Name="cros_ec_buttons"
+    H: Handlers=kbd event1 
+    N: Name="Elan Touchpad"
+    H: Handlers=event2 
+    N: Name="mt8192_mt6359_rt1015p_rt5682 Headset Jack"
+    H: Handlers=kbd event3 
+    N: Name="hid-over-i2c 04F3:2E70"
+    H: Handlers=event4 
+    N: Name="hid-over-i2c 04F3:2E70 UNKNOWN"
+    H: Handlers=event5 
+    N: Name="hid-over-i2c 04F3:2E70 UNKNOWN"
+    H: Handlers=event6 
+    N: Name="hid-over-i2c 04F3:2E70 Stylus"
+    H: Handlers=event7 
+    N: Name="hid-over-i2c 04F3:2E70 Stylus"
+    H: Handlers=event8 
+    N: Name="keyd virtual keyboard"
+    H: Handlers=sysrq kbd leds rfkill event9 
+    N: Name="keyd virtual pointer"
+    H: Handlers=event10 
+$ grep -n -A6 ^\[ids\] /etc/keyd/default.conf
+39:[ids]
+40-# The internal cros-ec keyboard reports vendor 0000 / product 0000, and keyd
+41-# matches ids as prefixes, so "k:0000:0000" covers it. Two other devices share
+42-# that vendor:product and must NOT be grabbed:
+43-#
+44-#   * cros_ec_buttons: the power button, the volume buttons and the lid and
+45-#     tablet-mode switches (EV_SW). keyd counts it as a keyboard only because
+
+## Firewall
+$ systemctl status --no-pager ufw.service
+● ufw.service - CLI Netfilter Manager
+     Loaded: loaded (/usr/lib/systemd/system/ufw.service; enabled; preset: disabled)
+     Active: active (exited) since Thu 2026-09-24 17:46:10 CST; 3 weeks 1 day ago
+ Invocation: 44b79caaabd5480890ab5a78113edb03
+   Main PID: 3729 (code=exited, status=0/SUCCESS)
+   Mem peak: 7M
+        CPU: 183ms
+
+Sep 24 17:46:09 asurada systemd[1]: Starting CLI Netfilter Manager...
+Sep 24 17:46:10 asurada systemd[1]: Finished CLI Netfilter Manager.
+$ sudo -n journalctl -b -u ufw --no-pager | tail -n 30
+Sep 24 17:46:09 asurada systemd[1]: Starting CLI Netfilter Manager...
+Sep 24 17:46:10 asurada systemd[1]: Finished CLI Netfilter Manager.
+$ sudo -n ufw status verbose
+Status: active
+Logging: on (low)
+Default: deny (incoming), allow (outgoing), disabled (routed)
+New profiles: skip
+
+To                         Action      From
+--                         ------      ----
+53317/udp                  ALLOW IN    Anywhere                  
+53317/tcp                  ALLOW IN    Anywhere                  
+172.17.0.1 53/udp          ALLOW IN    172.16.0.0/12              # allow-docker-dns
+172.17.0.1 53/udp          ALLOW IN    192.168.0.0/16             # allow-docker-dns
+53317/udp (v6)             ALLOW IN    Anywhere (v6)             
+53317/tcp (v6)             ALLOW IN    Anywhere (v6)             
+
+$ bash -c lsmod | grep -E 'zram|nf_tables|iptable|nft_'
+nft_limit              16384  13
+nft_compat             20480  123
+x_tables               61440  8 xt_conntrack,nft_compat,xt_LOG,xt_tcpudp,xt_addrtype,ip6t_rt,xt_limit,xt_hl
+nf_tables             303104  699 nft_compat,nft_limit
+$ sudo -n nft list ruleset | tail -n 30
+		xt match "conntrack" counter packets 0 bytes 0 drop
+		iifname "docker0" oifname "docker0" counter packets 0 bytes 0 accept
+		ip6 saddr fd00::/8 counter packets 0 bytes 0 return
+		ip6 daddr fd00::/8 xt match "conntrack" counter packets 0 bytes 0 jump ufw6-docker-logging-deny
+		counter packets 0 bytes 0 return
+	}
+
+	chain ufw6-user-input {
+		udp dport 53317 counter packets 0 bytes 0 accept
+		tcp dport 53317 counter packets 0 bytes 0 accept
+	}
+
+	chain ufw6-user-output {
+	}
+
+	chain ufw6-user-logging-input {
+	}
+
+	chain ufw6-user-logging-output {
+	}
+
+	chain ufw6-user-logging-forward {
+	}
+
+	chain ufw6-user-limit {
+	}
+
+	chain ufw6-user-limit-accept {
+	}
+}
+
+## Errors this boot
+$ sudo -n journalctl -b -p err --no-pager | tail -n 60
+Sep 24 17:46:09 asurada systemd[1]: bpf-restrict-fs: Failed to link 'restrict_filesystems' LSM BPF program: Operation not supported
+Sep 24 17:46:10 asurada kernel: coreboot_table firmware:coreboot: probe with driver coreboot_table failed with error -22
+Oct 17 12:13:33 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+Oct 17 12:13:33 asurada kernel: power_supply sbs-8-000b: driver failed to report `voltage_now' property: -6
+Oct 17 12:13:33 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+Oct 17 12:13:34 asurada kernel: power_supply sbs-8-000b: driver failed to report `energy_full' property: -6
+Oct 17 12:13:34 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+Oct 17 12:13:34 asurada kernel: power_supply sbs-8-000b: driver failed to report `charge_full_design' property: -6
+Oct 17 12:13:34 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+Oct 17 12:13:34 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+Oct 17 12:13:34 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+Oct 17 12:13:34 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+Oct 17 12:13:39 asurada wpa_supplicant[6289]: wlp1s0: nl80211: kernel reports: multicast RX registrations are not supported
+Oct 17 12:15:06 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+Oct 17 12:15:06 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+Oct 17 12:15:06 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+Oct 17 12:15:07 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+Oct 17 12:15:07 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+Oct 17 12:15:07 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+Oct 17 12:15:07 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+Oct 17 12:15:07 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+Oct 17 12:15:07 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+Oct 17 12:15:07 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+Oct 17 12:15:32 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+Oct 17 12:15:32 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+Oct 17 12:15:32 asurada kernel: power_supply sbs-8-000b: driver failed to report `energy_full_design' property: -6
+Oct 17 12:15:32 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+Oct 17 12:15:32 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+Oct 17 12:15:32 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+Oct 17 12:15:32 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+Oct 17 12:15:32 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+Oct 17 12:15:33 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+Oct 17 12:15:33 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+Oct 17 12:15:46 asurada dbus-broker-launch[13068]: Ignoring duplicate name 'org.fcitx.Fcitx5' in service file '/usr/share/dbus-1/services/org.fcitx.Fcitx5.service'
+Oct 17 12:15:46 asurada sddm-helper[12979]: gkr-pam: couldn't unlock the login keyring.
+Oct 17 12:15:52 asurada kernel:  Playback_12: ASoC: no backend DAIs enabled for Playback_12, possibly missing ALSA mixer-based routing or UCM profile
+$ sudo -n journalctl -b -u systemd-modules-load --no-pager | tail -n 40
+Sep 24 17:46:06 archlinux systemd[1]: systemd-modules-load.service: Deactivated successfully.
+Sep 24 17:46:06 archlinux systemd[1]: Stopped Load Kernel Modules.
+
+## Done

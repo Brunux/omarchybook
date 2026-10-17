@@ -1,0 +1,173 @@
+check-system: 2026-10-17T12:32:12 on 7.2.7-mt81 (as omarchy)
+
+== System ==
+  --    Omarchy 4.0.0.r7026.g51bfd1d
+  ok    os-release is Omarchy on Arch Linux ARM (ID=omarchy, ID_LIKE=arch)
+  --    hostname asurada
+  ok    linux-omarchy-book 7.2.7-2 is installed
+  ok    the running kernel is the installed one (7.2.7-mt81)
+  ok    the running kernel is this port's build
+  ok    modules for the running kernel are installed
+  ok    linux-omarchy is absent
+
+== Platform ==
+  ok    omarchy-hw-platform answers aarch64-google
+  --    compatible: google,hayato-rev1 google,hayato mediatek,mt8192 
+  ok    the device tree names a google,<board> machine
+  --    model: Google Hayato rev1
+  ok    the image manifest was retired on first boot
+  ok    the [platform] signing key is trusted
+  ok    the omarchy-google journald drop-in is installed (the journal is capped)
+
+== Firmware ==
+  ok    every firmware file the kernel asked for was loaded
+  ok    MediaTek firmware is in the log
+  ok    the MT8192 SCP firmware loaded (its boot noise is expected, AGENTS.md)
+  ok    cros_ec is in the tree as a google device
+  ok    firmware directory /lib/firmware/mediatek
+  ok    firmware directory /lib/firmware/rtw88
+  ok    firmware directory /lib/firmware/rtw89
+
+== Storage ==
+  ok    /etc/fstab's / UUID matches the running root (7c2663d1-fcf6-418f-89b2-833f98398dbf)
+  ok    /etc/fstab names /boot by UUID (UUID=9569588d-eee5-4a32-8c8a-ebc87e2e56a1)
+  ok    / is mounted read-write
+  ok    GPT carries pmOS_kernel
+  ok    GPT carries pmOS_boot
+  ok    GPT carries pmOS_root
+  ok    the kernel partition has ChromeOS kernel type
+  ok    the kernel partition is successful and priority 1
+  ok    the running root is /dev/mmcblk1 p3
+  ok    the root filesystem is 71% full
+  FAIL  no swap at all: systemd-zram-setup@zram0.service should have made it (zram-generator)
+  ok    no filesystem errors in dmesg
+
+== Display and GPU ==
+  ok    connected DRM outputs: card1-eDP-1
+  ok    panfrost is loaded (Mesa on the Mali GPU)
+  ok    panfrost bound the Mali GPU: [    0.830900] panfrost 13000000.gpu: mali-g57 id 0x9093 major 0x0 minor 0x0 status 0x0
+  ok    Hyprland is running: Hyprland 0.56.2 built from branch v0.56.2 at commit efb50993780079460b0cbed1363e2166a2de1d9f clean ([gha] Nix: update inputs).
+  ok    0 monitor(s) in the session
+  ok    hyprctl reports no configuration errors
+  ok    brightnessctl is installed
+  ok    the backlight udev rule is installed (group video, group-writable)
+  ok    backlight is writable by group video (664 video /sys/class/backlight/backlight-lcd0/brightness)
+  ok    the session user is in group video
+
+== Input ==
+  ok    4 input device(s) report a keyboard handler
+  ok    11 input device(s) report a pointer or event handler
+  ok    keyd excludes -0000:0000:c68a2d8e (the power button and the headset jack stay out of its hands)
+  ok    keyd excludes -0000:0000:3c5e67dc (the power button and the headset jack stay out of its hands)
+  ok    keyd leaves the Lock key (KEY_SLEEP) alone
+  ok    keyd is active
+  ok    keyd's virtual keyboard is present: it has taken over the internal one
+  --    logind HandleSuspendKey: suspend (default)
+
+== Audio ==
+  ok    package pipewire
+  ok    package wireplumber
+  ok    package pipewire-alsa
+  ok    package pipewire-audio
+  ok    package pipewire-pulse
+  ok    package alsa-utils
+  ok    package alsa-ucm-conf
+  ok    the MT8192 UCM configuration is installed
+  ok    WirePlumber answers wpctl
+  ok    the PulseAudio protocol server answers: Server Name: PulseAudio (on PipeWire 1.6.9)
+  ok    the sound card is a Pulse card: alsa_card.platform-sound
+  ok    the card's active profile is HiFi
+  ok    sinks: alsa_output.platform-sound.HiFi__Headphones__sink alsa_output.platform-sound.HiFi__Speaker__sink 
+  ok    a monitor source exists for recording with sound
+  ok    ALSA sees the MT8192 card
+
+== Network ==
+  ok    package networkmanager
+  ok    package wpa_supplicant
+  ok    package iw
+  ok    package wireless-regdb
+  ok    Wi-Fi interfaces: wlp1s0 
+  ok    regulatory domain DFS-UNSET
+  ok    NetworkManager is active
+  ok    NetworkManager manages a Wi-Fi device: wlp1s0:wifi:disconnected
+  ok    1 NetworkManager connection profile(s)
+  ok    no profile pins an interface name
+  ok    nmtui is available
+  --    sshd is active
+  ok    ufw is active
+
+== Bluetooth ==
+  ok    bluez-utils is installed
+  ok    the Bluetooth controller is powered: 	Name: asurada
+  ok    Bluetooth is not soft-blocked
+
+== Suspend and power ==
+  ok    system suspend is offered (/sys/power/state: freeze mem disk)
+  ok    s2idle is available: 
+  ok    systemd-logind is active
+  ok    polkit is active
+  ok    power-profiles-daemon is active
+  ok    the Omarchy sleep lock unit is installed
+  FAIL  omarchy-system-sleep-monitor is not running: the session will not lock on suspend
+  --    no suspend cycle this boot
+
+== Clock ==
+  ok    the clock reads 2026-10-17 12:32
+  warn  the clock is not synchronised yet (systemd-timesyncd is enabled and needs the network)
+  --    timezone America/Mexico_City
+  ok    systemd-timesyncd is enabled
+
+== Session ==
+  ok    package hyprland
+  ok    package quickshell
+  ok    package uwsm
+  ok    package sddm
+  ok    the Hyprland (uwsm) session is installed
+  ok    display-manager.service points at sddm
+  ok    SDDM runs Wayland
+  ok    SDDM's compositor command is installed (CompositorCommand=start-hyprland -- --config /usr/share/sddm/hyprland.lua)
+  ok    the Omarchy SDDM theme is installed
+  ok    this shell runs inside Hyprland (XDG_CURRENT_DESKTOP=Hyprland)
+  FAIL  no quickshell process: the bar, the OSDs and the menus are not up
+  ok    the user's Hyprland configuration exists (/home/omarchy/.config/hypr)
+  ok    pipewire is active in the session
+  warn  omarchy-sleep-lock.service is not enabled for this user
+  ok    sddm is active
+
+== Fonts and icons ==
+  ok    font: JetBrainsMono Nerd Font
+  ok    font: Noto Color Emoji
+  ok    font: Noto Sans CJK JP
+  --    601 font families are installed
+
+== Update path ==
+  ok    the kernel is pinned: 'omarchy update' cannot pull linux-omarchy back in
+  --    no [platform] repository: the kernel and the platform packages are updated by reflashing (docs/plan.md §3, decision 7)
+  ok    the [omarchy] repository is configured
+  ok    the omarchy command is installed (4.0.0.alpha)
+
+== Declared packages ==
+  ok    all 41 declared packages are installed
+
+== Journal ==
+  --    error-priority lines this boot (up to 15):
+        Sep 24 17:46:09 asurada systemd[1]: bpf-restrict-fs: Failed to link 'restrict_filesystems' LSM BPF program: Operation not supported
+        Sep 24 17:46:10 asurada kernel: coreboot_table firmware:coreboot: probe with driver coreboot_table failed with error -22
+        Oct 17 12:13:33 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+        Oct 17 12:13:33 asurada kernel: power_supply sbs-8-000b: driver failed to report `voltage_now' property: -6
+        Oct 17 12:13:33 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+        Oct 17 12:13:34 asurada kernel: power_supply sbs-8-000b: driver failed to report `energy_full' property: -6
+        Oct 17 12:13:34 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+        Oct 17 12:13:34 asurada kernel: power_supply sbs-8-000b: driver failed to report `charge_full_design' property: -6
+        Oct 17 12:13:34 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+        Oct 17 12:13:34 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+        Oct 17 12:13:34 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+        Oct 17 12:13:34 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+        Oct 17 12:13:39 asurada wpa_supplicant[6289]: wlp1s0: nl80211: kernel reports: multicast RX registrations are not supported
+        Oct 17 12:15:06 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+        Oct 17 12:15:06 asurada kernel: power_supply sbs-8-000b: driver failed to report `time_to_empty_now' property: -5
+  --            (21 more suppressed)
+
+== Verdict ==
+  104 ok, 2 warn, 3 FAIL, 0 skip
+FAIL lines above are regressions, not hypotheses: map each one to a cause before keeping the report (docs/plan.md Phase 7).
