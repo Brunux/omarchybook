@@ -178,7 +178,11 @@ and missing fails the build. It is invoked as `filter_aarch64_packages <kernel> 
   ALARM chroot**: the package ships only `/usr/bin/depthchargectl`, `/usr/bin/mkdepthcharge` and
   `usr/lib/python3.14/site-packages/depthcharge_tools/` — **no `/etc/kernel/postinst.d`,
   `/etc/initramfs/post-update.d` or libalpm hooks**, so nothing to disable on Arch. (The AUR
-  PKGBUILD also forgets `python-setuptools` as a makedepend; the build fails without it.)
+  PKGBUILD also forgets `python-setuptools` as a makedepend; the build fails without it, and the
+  vendored copy adds it.) **The recipe is vendored** in `upstream/depthcharge-tools/` (AUR commit
+  `9f20e678ed63f4b9f20e82ace555577c0c88c7b5`, PKGBUILD SHA-256 recorded in its `PROVENANCE.md`) and
+  built by `scripts/build-package.sh`, the generic builder every recipe goes through: a clean
+  `$BUILD_ROOT` reproduces the bundle now (see §10).
 - **`vboot-utils`** exists in two places and they are not equivalent:
   - **Arch Linux ARM's `alarm` repo** (not the AUR): `vboot-utils r2729.10343b821-1`, package file
     `*.pkg.tar.xz` (not `.zst`). Downloaded and listed: it installs `usr/bin/cgpt`,
@@ -189,11 +193,16 @@ and missing fails the build. It is invoked as `filter_aarch64_packages <kernel> 
     build would need `makepkg --ignorearch`. Prefer the ALARM package and vendor the keys.
 - **`vboot-kernel-utils` is not in the AUR.** On Arch, `cgpt` **and** `futility` both come from
   `vboot-utils` (ALARM), unlike Debian where `cgpt` and `vboot-kernel-utils` are separate packages.
-- **`depthchargectl` key lookup** (`depthcharge-tools` cloned, HEAD `1c123c8`): search order is
-  `/etc/depthcharge-tools`, `/usr/share/vboot/devkeys`, `/usr/local/share/vboot/devkeys`; the names
-  it looks for are `kernel.keyblock`, `kernel_data_key.vbprivk`, `kernel_subkey.vbpubk`; it also
-  accepts `--keydir`, `--keyblock`, `--signprivate`, `--signpubkey`. `boot/make-kpart.sh` passes
-  `--keydir` when the vendored copy exists.
+- **Which tool takes which key option** (`depthcharge-tools` cloned, HEAD `1c123c8`; verified against
+  both the built 0.6.2 and the host's 0.6.3): the *default* search order (`config.ini` +
+  `utils/platform.py`) is `/etc/depthcharge-tools`, `/usr/share/vboot/devkeys`,
+  `/usr/local/share/vboot/devkeys`, for the names `kernel.keyblock`, `kernel_data_key.vbprivk`,
+  `kernel_subkey.vbpubk`. **`depthchargectl` has no `--keydir`** — that option is `mkdepthcharge`'s
+  (`--keydir`, plus `--keyblock`/`--signprivate`/`--signpubkey`); `depthchargectl build` takes the
+  three files as `--vboot-keyblock`, `--vboot-public-key` and `--vboot-private-key`.
+  `boot/make-kpart.sh` passes those three explicitly, which is what makes the vendored
+  `boot/devkeys/` actually used (it originally passed `--keydir` and every kpart build failed with
+  `unrecognized arguments`).
 
 Everything AUR-only that is needed on the device gets built once and published into the local
 `[platform]` bundle (`repo-add`), per plan §7.
@@ -262,7 +271,7 @@ inside `[options]` right after that leaf runs (`pacman-conf IgnorePkg` confirms 
 Pinning this port's own kernel too is deliberate: nothing on the device serves `[platform]` yet
 (above), so an update that could replace it would leave the machine unbootable.
 
-## 9. Build disk budget
+## 9. Build budget: disk and CPU
 
 The build root lives under `$BUILD_ROOT` (`~/.cache/omarchybook`) and the first full Phase 3
 run died on it: the host filesystem filled to 100% and `omarchy-provision-user` aborted with
@@ -283,10 +292,76 @@ Measured on the 56GiB host, when the tree was full:
 So **`makepkg` must always be run with `--clean`**. Without it every kernel build leaves its
 whole source tree (8.5G for one Linux tree) behind, owned by the chroot's `builder` (uid 1001, so
 reclaiming it needs `sudo`), and nothing ever removes it because the recipes are only rebuilt when
-their stamp changes. `scripts/build-omarchy.sh` now builds with `-fc`. The Phase 1 kernel build is
-still a manual chroot step and is the one that leaked; whatever `scripts/build-kernel.sh` becomes
-must pass `--clean` too. `scripts/build-rootfs.sh` refuses to start with less than 12GiB free and
-prints the two directories to reclaim.
+their stamp changes. `scripts/build-omarchy.sh`, `scripts/build-package.sh` (the builder every
+recipe goes through, the kernel included) and the `scripts/build-kernel.sh` wrapper all build with
+`-fc`: the downloaded source tarballs are kept between runs via `SRCDEST`, and `PKGDEST` is emptied.
+`scripts/build-rootfs.sh` refuses to start with less than 12GiB free and prints
+the two directories to reclaim.
+
+**`makepkg` does not set `MAKEFLAGS`, so every recipe built on a single core until this was
+noticed.** The chroot's `/etc/makepkg.conf` ships `#MAKEFLAGS="-j2"` commented out and `makepkg`
+never touches the variable at all (no reference in `/usr/bin/makepkg`), so `make` ran with no `-j`:
+the Phase 1 kernel rebuild's top-level `make all` reported `MAKEFLAGS=rR` and the whole build sat on
+one of 8 cores at ~25-36 objects/min — measured, with load 2.2, CPU 20% busy, disk 0% busy and PSI
+stalls `avg10=0.00`, i.e. neither I/O-bound nor memory-bound, just serial. `lib.sh` now derives
+`JOBS` (cores, capped by GiB of RAM: one kernel compile job costs a few hundred MiB, so 3.8GiB of
+host buys 4) and exports `MAKEFLAGS=-j$JOBS`; the builders re-export it *inside* the chroot, because
+`su` resets the environment and would drop it.
+
+**A recipe's work tree survives an interrupted build, and only then.** `makepkg -c` removes
+`$srcdir` after a successful build (that is the 8.5G leak above, still handled), but nothing removes
+it when the build dies, so `$BUILD_CHROOT/pkg-build/<recipe>/recipe/src` is still there: the
+builders therefore pass `--noextract` once that tree exists and the kernel recipe applies its
+patches idempotently (`patch -R --dry-run` first, else "Reversed (or previously applied) patch
+detected!" aborts `prepare()`). So killing a kernel build and re-running it resumes from the objects
+it already compiled; a recipe whose *patch text* changed over such a tree is a conflict to resolve
+by hand (`rm -rf` that `src/`), not something to paper over.
+
+## 10. The `[platform]` bundle: what it carries, and its signing (Phase 1)
+
+**What is in it.** `linux-omarchy-book` + `-headers` (`scripts/build-kernel.sh`, from
+`kernels/mediatek-mt81/`), `omarchy-dev` + `omarchy-settings-dev` (`scripts/build-omarchy.sh`, from
+the pinned checkout) and `depthcharge-tools` (`scripts/build-package.sh`, from the vendored AUR
+recipe, §7). `build-rootfs.sh` signs everything in it, indexes it with `repo-add`, installs the
+device set from it, and asserts that it carries `$KERNEL_PACKAGE`.
+
+**Signing is a build/release key of our own, kept outside the repository.** `lib.sh`'s
+`ensure_platform_key` creates it on first use in `$BUILD_ROOT/keys/gnupg` (mode 700, root-owned, no
+passphrase, `ed25519`, sign only) and exports the public half to `$BUILD_ROOT/keys/platform.pub`;
+`sign_platform_packages` writes a binary detached signature next to each package (verified: `Good
+signature`, and a second pass is a no-op). `keys/README.md` documents it.
+
+**How the image trusts it, and why the database is not signed.** `build-rootfs.sh` imports
+`platform.pub` into the image's keyring and `pacman-key --lsign-key`s it, so `[platform]` needs no
+`SigLevel` override at all: the global `SigLevel = Required DatabaseOptional` applies and pacman
+*requires* the package signatures — which replaces the `Optional TrustAll` a build-time bundle would
+otherwise need. The private key never enters the rootfs, so `repo-add` signs nothing: it only copies
+each `.sig` into the database as `%PGPSIG%`. Hence the `.sig` files must sit next to their packages
+and must **not** be handed to `repo-add` as arguments — the old `/packages/*.pkg.tar.*` glob would
+have, as soon as signatures existed.
+
+**The kpart pipeline works end to end (this is Phase 1's acceptance).** `boot/make-kpart.sh` builds
+the signed FIT from the built rootfs (`depthchargectl build --root none --board mt8192`, lzma, the
+vendored devkeys) and `futility show` reports it:
+
+```
+Body verification succeeded.
+Config:
+kern_guid=%U quiet loglevel=2 root=UUID=… rootwait rw
+```
+
+Three things that surfaced there. `kern_guid=%U` **is** prepended by `mkdepthcharge` (the `Config:`
+line carries it although `make-kpart.sh` deliberately does not add it), and `root=` is not in the
+kpart: as in the Debian original, the callers pass it as the third argument (`root=UUID=… rootwait
+rw`) — `install-kpart.sh` and `make-image.sh`, both of which run as root. That detail matters
+because **mkinitcpio 42 creates the initramfs images 0600 on purpose** (`umask 077`: "create
+initramfs images and unified kernel images as 600" — they may carry secrets), so an unprivileged
+kpart build cannot read them; `make-kpart.sh` re-execs through `sudo` in that case instead of dying
+inside depthchargectl. The mode is left as Arch sets it: the very same initramfs is world-readable
+inside the kernel partition anyway. And two mkinitcpio messages are expected noise in this build,
+not failures: `ERROR: failed to detect root filesystem` (the `autodetect` hook looks for a `root=`
+that only the kpart's cmdline has, later) and `WARNING: architecture 'aarch64' not supported,
+skipping hook` (the `microcode` hook; there is no aarch64 microcode to load).
 
 ## Still open (need a chroot or hardware — not answerable read-only)
 

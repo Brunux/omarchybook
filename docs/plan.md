@@ -227,12 +227,14 @@ omarchybook/
   upstream/omarchy/           patches/series plus 0001-aarch64-google.patch (the proposal)
   upstream/omarchy-pkgs/      the *-dev recipes the runtime and settings are
                               built from (pinned to the same quattro commit)
-  scripts/                    00-deps.sh, build-kernel.sh, build-omarchy.sh,
+  upstream/depthcharge-tools/ the AUR recipe for depthchargectl, the one package
+                              the device needs that no repository carries
+  scripts/                    build-package.sh, build-kernel.sh, build-omarchy.sh,
                               build-rootfs.sh, install-kernel.sh,
                               write-sd.sh, make-image.sh, make-release.sh,
                               install-emmc.sh, install-kpart.sh, backup-system.sh,
                               restore-system.sh, check-system.sh,
-                              lib.sh, lib-dist.sh
+                              lib.sh, lib-dist.sh, 00-deps.sh
   docs/                       plan.md, recon.md, upstream.md, releases/<version>.md
   reports/                    check-system.sh output captured on real hardware
 ```
@@ -273,29 +275,55 @@ Each phase ends in a verifiable artifact; hardware checkpoints are explicit.
 
 - [x] `kernels/mediatek-mt81/PKGBUILD` building 7.2.7 plus `patches/series` with `make LLVM=1`
       (clang/lld), reusing `build-kernel.sh`'s proven invocation. *Verified in the ALARM chroot:
-      both packages build; `kernelrelease` = `7.2.7-mt81`.*
+      both packages build; `kernelrelease` = `7.2.7-mt81`. `scripts/build-kernel.sh` is the
+      reproducible driver — a wrapper around `scripts/build-package.sh` that says why the kernel is a
+      package — and it stages the recipe into the build chroot, installs its `makedepends` as root,
+      runs `makepkg -fc --nodeps` with `-j$(nproc)` (recon §9), publishes both packages into
+      `[platform]`, signs them and stamps the recipe's contents so an unchanged tree is not
+      recompiled. The work tree survives an interrupted build, so a killed kernel build resumes
+      instead of starting over.*
 - [x] `linux-omarchy-book` installs `vmlinuz-<release>` (`make zinstall` produces no plain
       `vmlinuz`), `/usr/lib/modules/<release>`, and DTBs under `/boot/dtbs/` with **hayato first**.
       *Verified: `/boot/vmlinuz-7.2.7-mt81` (gzip arm64 `Image`), modules with `pkgbase`, and
-      `mt8192-asurada-hayato-r1.dtb` sorts first.*
+      `boot/dtbs/mediatek/mt8192-asurada-hayato-r1.dtb` — the vendor subdirectory `dtbs_install`
+      creates, which is why `deviceinfo_dtb` carries the `mediatek/` prefix — sorting first.*
 - [x] `linux-omarchy-book-headers`; `provides=('linux' 'linux-omarchy')`,
-      `conflicts=('linux-omarchy')`, `depends` mirroring the upstream recipe.
+      `conflicts=('linux-omarchy')`, `depends` mirroring the upstream recipe. *Both packages are
+      published into `[platform]` by `scripts/build-kernel.sh`; `-headers` is what a DKMS build on
+      the device would install.*
 - [x] mkinitcpio preset, modelled on upstream's `linux-omarchy.preset`. `CONFIG_MMC_MTK`,
       `CONFIG_DRM_MEDIATEK` and `CONFIG_EXT4_FS` are built in, so the initramfs stays small; verify
       that the `Possible missing firmware ... mali_csffw.bin for built-in driver panthor` warning is
       still just noise (it comes from initramfs-tools-style scanning of built-in drivers, and
       panthor never drives this Mali-G57). *Verified: `mkinitcpio -P` builds both images from the
-      preset; the warnings seen were `sd-vconsole` (no `/etc/vconsole.conf`), `drm_privacy_screen`
-      and `xhci_pci_renesas` — none the `mali_csffw.bin` one.*
+      preset; the messages seen were `sd-vconsole` (no `/etc/vconsole.conf`), `drm_privacy_screen`,
+      `xhci_pci_renesas` and two benign aarch64 ones: `ERROR: failed to detect root filesystem`
+      (the `autodetect` hook finds no `root=` in a chroot — the kpart supplies it at boot) and the
+      `microcode` hook skipping the architecture — none the `mali_csffw.bin` one.*
 - [ ] ALPM hook: after a kernel or initramfs change, rebuild and write the kpart — the Arch
       counterpart of the Debian sequence `install-kernel.sh` then `install-kpart.sh` — backing up
-      what it replaces.
-- [ ] Package signing and publication into the local `[platform]` repo via `repo-add`.
+      what it replaces. *Waits on its second half: Phase 5's `install-kpart.sh` (resolve `kern_guid`
+      from `/proc/cmdline`, check the FIT fits the partition and is signed, back up what it
+      replaces). The hook itself is a `boot/` file that calls it, so it lands with that half.*
+- [x] Package signing and publication into the local `[platform]` repo via `repo-add`. *`lib.sh`
+      keeps a build/release signing key outside the repository (`$BUILD_ROOT/keys`, created on first
+      use), `sign_platform_packages` writes a detached signature beside each package, and
+      `build-rootfs.sh` trusts the public half in the image before indexing with `repo-add`, which
+      copies each signature into the database as `%PGPSIG%`. `[platform]` therefore inherits
+      `SigLevel = Required DatabaseOptional` rather than needing `TrustAll` (recon §10). Every entry
+      in the bundle is reproducible from this repository: `depthcharge-tools`' AUR recipe is vendored
+      (`upstream/depthcharge-tools/`) and built by that same `scripts/build-package.sh` (plan §8).*
 
 **Acceptance:** `pacman -U` of the package in a chroot produces a bootable vmlinuz, modules and
-DTBs, and `futility show` on the hook's kpart reports `Body verification succeeded`. *The
-`pacman -U` half is verified (installing over ALARM's `linux-aarch64`, which ours conflicts with,
-then `mkinitcpio -P`); the `futility show` half waits on the kpart hook below and Phase 5.*
+DTBs, and `futility show` on the hook's kpart reports `Body verification succeeded`. *Both halves
+are verified: `pacman -U` installs over ALARM's `linux-aarch64`, which ours conflicts with, and
+`mkinitcpio -P` builds both images from the preset; and `boot/make-kpart.sh` builds the signed FIT
+from the built rootfs (30M, lzma, the vendored devkeys) with `futility show` reporting
+`Body verification succeeded` (recon §10). Re-verified after the rebuild that added `-headers` back:
+the kpart built from that rootfs is 30.2M with `mt8192-asurada-hayato-r1.dtb` first and
+`kern_guid=%U quiet loglevel=2 root=UUID=… rootwait rw`, and pacman installs the signed bundle with
+`SigLevel = Required DatabaseOptional` (no `TrustAll`). What is still missing is only the automatic
+trigger — the ALPM hook above, which lands with Phase 5's device-side half.*
 
 ### Phase 2 — Rootfs bootstrap
 
@@ -485,6 +513,12 @@ Still open:
 3. Whether LUKS is wanted later; it changes the kpart command line and the initramfs hooks.
 4. Whether the SD-installed card must be able to install to eMMC on its own (as in
    `debian-aarch64`) — assumed yes.
+5. **Resolved**: the recipe for an AUR-only *device* package lives in
+   `upstream/depthcharge-tools/`, next to the vendored Omarchy recipes and with a
+   `PROVENANCE.md` of its own, and `scripts/build-package.sh` builds it into
+   `[platform]` (verified: it is what published the signed 0.6.2-1 in the
+   bundle). `depthcharge-tools` had been built by hand, so a clean `$BUILD_ROOT`
+   could not rebuild the bundle it installs the device from.
 
 ## 9. First commits once the agent switches
 

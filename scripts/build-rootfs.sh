@@ -119,9 +119,11 @@ LocalFileSigLevel = Optional
 $sandbox
 
 # [platform]: the local bundle built by this repository (our kernel, and any
-# AUR-only package), indexed with repo-add. It is not fetched.
+# AUR-only package), indexed with repo-add and signed with the build key, whose
+# public half is trusted below. Deliberately no SigLevel override: the global
+# rule applies, so package signatures are required and the database's is not
+# (repo-add is not given the private key -- it never enters the image).
 [platform]
-SigLevel = Optional TrustAll
 Server = file:///packages
 
 # [omarchy]: Omarchy's own repository, published for aarch64 on the edge
@@ -155,9 +157,20 @@ chroot "$ROOTFS" pacman-key --add /tmp/omarchy.gpg
 chroot "$ROOTFS" pacman-key --lsign-key "$OMARCHY_SIGNING_KEY"
 rm -f "$ROOTFS/tmp/omarchy.gpg"
 
+# [platform] is signed with the build key (lib.sh), whose public half is handed
+# to the image so the [platform] SigLevel above can require signatures.
+log "Trusting the [platform] signing key"
+ensure_platform_key
+log "  fingerprint: $PLATFORM_KEY_FPR"
+cp "$PLATFORM_KEY_FILE" "$ROOTFS/tmp/platform.pub"
+chroot "$ROOTFS" pacman-key --add /tmp/platform.pub
+chroot "$ROOTFS" pacman-key --lsign-key "$PLATFORM_KEY_FPR"
+rm -f "$ROOTFS/tmp/platform.pub"
+
 # ---------------------------------------------------------------------------
 # [platform] bundle
 # ---------------------------------------------------------------------------
+sign_platform_packages
 log "Indexing the local [platform] bundle into /packages"
 mkdir -p "$ROOTFS/packages"
 shopt -s nullglob
@@ -166,9 +179,12 @@ shopt -u nullglob
 ((${#platform_pkgs[@]})) ||
 	die "no packages in $PLATFORM_REPO; build the kernel first (Phase 1)"
 cp "${platform_pkgs[@]}" "$ROOTFS/packages/"
-# The glob must be expanded inside the chroot: on the host /packages does not
-# exist, so an unquoted glob here would reach repo-add literally.
-chroot "$ROOTFS" /bin/bash -c 'repo-add /packages/platform.db.tar.gz /packages/*.pkg.tar.*' >/dev/null
+# The find must run inside the chroot: on the host /packages does not exist.
+# Only the packages themselves are passed -- repo-add reads each `.sig` next to
+# its package (that is where %PGPSIG% comes from) but would choke on them as
+# arguments.
+chroot "$ROOTFS" /bin/bash -c \
+	'repo-add /packages/platform.db.tar.gz $(find /packages -maxdepth 1 -name "*.pkg.tar.*" ! -name "*.sig")' >/dev/null
 chroot "$ROOTFS" pacman -Sy
 
 if ! chroot "$ROOTFS" pacman -Si "$KERNEL_PACKAGE" >/dev/null 2>&1; then

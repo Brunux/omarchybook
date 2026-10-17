@@ -183,6 +183,7 @@ in_chroot su -s /bin/bash builder -c "
 	set -e
 	export OMARCHY_SRC=/omarchy-build/src
 	export PKGDEST=/omarchy-build/out
+	export MAKEFLAGS='$MAKEFLAGS'
 	for recipe in ${RECIPES[*]}; do
 		echo \"==> makepkg \$recipe\"
 		( cd /omarchy-build/pkgbuilds/\$recipe && makepkg -fc --noconfirm --noprogressbar --nodeps )

@@ -176,11 +176,87 @@ KPART="${KPART:-$WORK_DIR/$DEVICE.vmlinuz.kpart}"
 PLATFORM_REPO="${PLATFORM_REPO:-$BUILD_ROOT/platform}"
 PACMAN_CACHE="${PACMAN_CACHE:-$BUILD_ROOT/pacman-cache}"
 
+# ---------------------------------------------------------------------------
+# Build parallelism
+# ---------------------------------------------------------------------------
+# makepkg does not set MAKEFLAGS by itself (Arch ships it commented out in
+# makepkg.conf) and `make` without -j builds serially, so a recipe that does not
+# get it here silently uses one core: the first kernel builds in this repository
+# ran for hours that way (docs/recon.md §9). Cap by memory as well as by cores --
+# one kernel compile job spends a few hundred MiB and the build host here has
+# under 4 GiB. Override with JOBS=n or MAKEFLAGS=... when needed.
+JOBS="${JOBS:-$(nproc)}"
+_mem_gib=$(( ($(awk '/^MemTotal:/ { print $2 }' /proc/meminfo) + 1048575) / 1048576 ))
+[ "$JOBS" -le "$_mem_gib" ] || JOBS="$_mem_gib"
+[ "$JOBS" -ge 1 ] || JOBS=1
+MAKEFLAGS="${MAKEFLAGS:--j$JOBS}"
+export JOBS MAKEFLAGS
+
+# ---------------------------------------------------------------------------
+# [platform] signing key
+# ---------------------------------------------------------------------------
+# The bundle is signed with a build/release key that lives outside the
+# repository: a private key is never committed, and keys/ carries only the
+# public key [omarchy] signs with. The key is created on first use (below) and
+# its public half is what a build trusts for [platform] (build-rootfs.sh).
+# Keeping the bundle signed now is what a device-side [platform] repository
+# would need later (docs/recon.md §8), and it exercises the trust chain while
+# the bundle is still a build-time one.
+PLATFORM_KEY_UID="${PLATFORM_KEY_UID:-Omarchy Book Build <build@omarchybook.invalid>}"
+PLATFORM_GNUPGHOME="${PLATFORM_GNUPGHOME:-$BUILD_ROOT/keys/gnupg}"
+PLATFORM_KEY_FILE="${PLATFORM_KEY_FILE:-$BUILD_ROOT/keys/platform.pub}"
+
+platform_key_fingerprint() {
+	GNUPGHOME="$PLATFORM_GNUPGHOME" gpg --batch --with-colons \
+		--list-keys "$PLATFORM_KEY_UID" 2>/dev/null |
+		awk -F: '/^fpr:/ { print $10; exit }'
+}
+
+ensure_platform_key() {
+	# gpg refuses a keyring other users can read, and wants to create its files
+	# in a directory that already exists.
+	mkdir -p "$PLATFORM_GNUPGHOME"
+	chmod 700 "$PLATFORM_GNUPGHOME"
+	if [ -z "$(platform_key_fingerprint)" ]; then
+		log "Creating the [platform] signing key ($PLATFORM_KEY_UID)"
+		log "  keyring: $PLATFORM_GNUPGHOME"
+		GNUPGHOME="$PLATFORM_GNUPGHOME" gpg --batch \
+			--pinentry-mode loopback --passphrase '' \
+			--quick-gen-key "$PLATFORM_KEY_UID" ed25519 sign 0
+	fi
+	PLATFORM_KEY_FPR="$(platform_key_fingerprint)"
+	[ -n "$PLATFORM_KEY_FPR" ] ||
+		die "no [platform] signing key in $PLATFORM_GNUPGHOME"
+	GNUPGHOME="$PLATFORM_GNUPGHOME" gpg --batch --armor \
+		--export "$PLATFORM_KEY_FPR" > "$PLATFORM_KEY_FILE"
+	export PLATFORM_KEY_FPR
+}
+
+# Detached binary signatures next to each package in the bundle: that is what
+# pacman verifies and what repo-add copies into the database as %PGPSIG%.
+# Idempotent: a package whose signature is already newer than it is left alone.
+sign_platform_packages() {
+	[ -d "$PLATFORM_REPO" ] || return 0
+	ensure_platform_key
+	local pkg
+	for pkg in "$PLATFORM_REPO"/*.pkg.tar.*; do
+		[ -f "$pkg" ] || continue
+		case "$pkg" in *.sig) continue ;; esac
+		if [ -f "$pkg.sig" ] && [ "$pkg.sig" -nt "$pkg" ]; then
+			continue
+		fi
+		log "Signing $(basename "$pkg")"
+		GNUPGHOME="$PLATFORM_GNUPGHOME" gpg --batch --yes --no-armor \
+			--local-user "$PLATFORM_KEY_FPR" --detach-sign "$pkg"
+	done
+}
+
 export REPO_DIR BUILD_ROOT WORK_DIR SRC_DIR DEVICE DEVICE_DIR KERNEL_DIR
 export WIFI_DIR LOCALE TIMEZONE
 export KERNEL_PACKAGE KERNEL_PACKAGE_HEADERS
 export BOOT_SIZE_MIB BOOT_FS KERNEL_RELEASE
 export PLATFORM_REPO PACMAN_CACHE
+export PLATFORM_KEY_UID PLATFORM_GNUPGHOME PLATFORM_KEY_FILE
 export OMARCHY_GIT OMARCHY_COMMIT OMARCHY_SRC_DIR OMARCHY_PATCH_DIR
 export OMARCHY_PKGS_DIR OMARCHY_PACKAGE OMARCHY_SETTINGS_PACKAGE
 export OMARCHY_NVIM_PACKAGE OMARCHY_KEYRING_PACKAGE OMARCHY_SIGNING_KEY

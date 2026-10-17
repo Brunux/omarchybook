@@ -1,0 +1,32 @@
+# Maintainer: Albert Koczy <alufers@wp.pl>
+#
+# Vendored from the AUR (docs/plan.md §4, §8): the recipe for the one package
+# the device needs that no configured repository carries. `depthchargectl` is
+# what builds and writes the signed FIT kernel partition. See PROVENANCE.md.
+#
+# Deviation from the AUR original: `python-setuptools` is a makedepend.
+# `python setup.py install` fails in a clean ALARM chroot without it, because
+# `python` alone does not pull setuptools in (docs/recon.md §7).
+pkgname=depthcharge-tools
+pkgver=0.6.2
+pkgrel=1
+pkgdesc="Tools to manage the Chrome OS bootloader"
+arch=('any')
+url="https://github.com/alpernebbi/depthcharge-tools"
+license=('GPL-2.0-or-later')
+depends=('python')
+makedepends=('python-setuptools')
+
+source=("https://github.com/alpernebbi/depthcharge-tools/archive/refs/tags/v${pkgver}.tar.gz")
+
+sha256sums=('cba9f6d38aab1a00c98b180d9d762c935bd971f47d7b13eae030cd4c7d163cf0')
+
+build() {
+  cd "${srcdir}/depthcharge-tools-${pkgver}"
+  python setup.py build
+}
+
+package() {
+  cd "${srcdir}/depthcharge-tools-${pkgver}"
+  python setup.py install --root="${pkgdir}" --optimize=1
+}

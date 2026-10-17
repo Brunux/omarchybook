@@ -80,6 +80,13 @@ prepare() {
     case $p in
       '' | '#'*) continue ;;
     esac
+    # The work tree is not wiped between builds (scripts/build-package.sh), so
+    # skip a patch that is already applied: applying it twice fails ("Reversed
+    # (or previously applied) patch detected!") and would leave rejects behind.
+    if patch -p1 -R --dry-run --force --batch < "$startdir/patches/$p" >/dev/null 2>&1; then
+      echo "  $p (already applied)"
+      continue
+    fi
     echo "  $p"
     patch -Np1 --no-backup-if-mismatch < "$startdir/patches/$p"
   done < "$startdir/patches/series"
