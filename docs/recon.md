@@ -790,8 +790,8 @@ not the one the report was run on:
   (priority 100, zstd, 3.7 GiB) and ufw is filtering on the rules it did manage to load. That also
   settles a design question: `/etc/systemd/zram-generator.conf` does not exist and does not need to,
   because zram-generator's own unit reads the drop-in
-  `/usr/lib/systemd/zram-generator.conf.d/90-omarchy.conf` alone. The first boot's own
-  `journalctl -b -1` is the last thing missing to explain its swap, and the keyd warn was the script:
+  `/usr/lib/systemd/zram-generator.conf.d/90-omarchy.conf` alone. The swap FAIL was the check's test,
+  not the machine's -- `test -s` on a procfs file, answered below -- and the keyd warn was the script:
   it looked for `matched|device added` while keyd 2.6 logs `DEVICE: match 0000:0000:af5c732c
   /etc/keyd/default.conf (cros_ec)` and then creates `keyd virtual keyboard`. The check asks for that
   device first now, with the log as its fallback.
@@ -799,7 +799,8 @@ not the one the report was run on:
 **The second card (2026-10-17) changed the question.** Its report came from the desktop session, so
 there are no skips: SDDM logs in, Hyprland runs, and every fix the first card's mapping asked for is
 visible from inside it -- `[platform]` trusted, `ufw is active`, keyd's virtual keyboard present. Its
-three FAILs are one cause and one open question.
+three FAILs are two things: the same `no swap` line the first boot printed, which was the check's
+`test -s` (below), and two of the seeding cause (the missing shell and the missing sleep monitor).
 
 The cause: the user's home was never seeded from `/etc/skel`. `build-rootfs.sh` creates the account
 before `omarchy-apply-system --install-user` installs the packages whose skel content that account
@@ -814,15 +815,34 @@ at once. The image now seeds skel the way `useradd -m` would (leaving existing f
 Hyprland check no longer passes on any directory: it wants Omarchy's bootstrap in `hyprland.lua` and
 says so when it finds Hyprland's own.
 
-The open question: swap. Whether `/proc/swaps` is empty is neither the question (swap can be off with
-the file still there) nor enough evidence to answer it from a report, so the check now counts its
-entries and, when there are none, carries the evidence in the FAIL itself -- the file's size, the
-unit's state and its last log lines. Both first boots failed it; both diagnostics, minutes later,
-showed `/dev/zram0` at priority 100 with `systemd-zram-setup@zram0.service` `active (exited)`. The
-first card's diagnostics was taken on that card's *second* boot (its unit says "since 09:52:41", ten
-seconds after that boot and minutes after the report), which is why it could show swap at all;
-`journalctl -b -1 -u systemd-zram-setup@zram0.service` on a card is what distinguishes "the swap came
-up late" from "the check read something else".
+**Swap, and the two FAILs that were the check's.** `test -s` cannot test a procfs file: measured on
+this kernel (7.2.7-mt81, the same one the cards run), `stat -c %s /proc/swaps` is `0` and
+`[ -s /proc/swaps ]` is *false* on a machine whose `/dev/zram0` is active at priority 300, while
+`wc -c < /proc/swaps` reads 105 bytes and `cat` shows the header and the entry. Both first boots
+therefore failed `[ -s /proc/swaps ]` with swap up and busy, and neither the first card's diagnostics
+(that card's *second* boot, its unit "since 09:52:41") nor the third card's `ok` was ever a change of
+state -- the two earlier FAILs were a broken test, and the check now counts entries by *reading* the
+file and, when there are none, puts the bytes it reads, the unit's state and its last log lines in
+the FAIL itself.
+
+**The third card (2026-10-17) is the acceptance's report, one check-fix away.** Everything the
+mapping asked for is visible at once: 108 ok, 1 warn, 1 FAIL, 0 skip, with `the Quickshell shell is
+running` and `the user's Hyprland configuration is Omarchy's` (the seeding above, doing what it was
+supposed to), `omarchy-sleep-lock.service is enabled for this user` and the swap line green. Its one
+FAIL was the check's own: it asked `pgrep -x omarchy-system-sleep-monitor`, and a process name is
+truncated to 15 characters (`TASK_COMM_LEN`) -- measured: a script with that name runs as
+`omarchy-system-` in `/proc/*/comm`, so the probe could not match it however well the monitor ran.
+The check asks systemd for `omarchy-sleep-lock.service` now, and prints the state either way, so
+whether the unit was in fact running on that boot is the re-run's to say rather than this
+paragraph's. Its one warn was the check's too: it assumed a profile pinning an interface name had
+been imported, and the maintainer's was made on the machine; the warn now fires only for a profile
+older than the image's own manifest, which is the case that leaks a build host's Wi-Fi PSK instead
+of describing a normal connection. The report also said `0 monitor(s) in the session` while `hyprctl`
+had answered -- an empty `[]` would have failed the case just before it -- which is a third bug of
+the same kind: the count assigned instead of accumulating, so a JSON that is not one line reports
+whatever its last line held (measured over a two-line array with one `"name"`: 0 that way, 1 with
+`+=`), and the pattern now comes in through `-v` rather than as a regex literal whose `\"` is not
+portable between awks.
 
 **Known noise, the same on the sibling's verified machine.** `bpf-restrict-fs: Failed to link
 'restrict_filesystems' LSM BPF program: Operation not supported` (systemd's own program, with

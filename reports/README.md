@@ -10,8 +10,12 @@ tty1 before any desktop session existed, and `2026-10-17-diagnostics.txt`, its j
 (`scripts/collect-diagnostics.sh`, not a report itself but the evidence a FAIL gets mapped against --
 recon §14). The second card, written with the first card's fixes, left the same pair again:
 `2026-10-17-first-boot-second-card.txt`, this time from the desktop session, and its diagnostics. The
-same boot is worth two reports when one of them could not see the session, and worth a second pair
-when a change has to be judged against it.
+third card, written with the second card's fix, is
+`2026-10-17-first-boot-third-card.txt` and `2026-10-17-diagnostics-third-card.txt`: it arrived as one
+file with both outputs in it, which is what a session of running both scripts the same minute looks
+like, and it was split here because this directory is one file per output. The same boot is worth two
+reports when one of them could not see the session, and worth a second pair when a change has to be
+judged against it.
 
 ## Making one
 
