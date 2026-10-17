@@ -344,10 +344,10 @@ index 4b3598b..bbb1624 100644
        return 1
 diff --git a/install/omarchy-aarch64-google.packages b/install/omarchy-aarch64-google.packages
 new file mode 100644
-index 0000000..60dcff4
+index 0000000..db0b0d2
 --- /dev/null
 +++ b/install/omarchy-aarch64-google.packages
-@@ -0,0 +1,24 @@
+@@ -0,0 +1,30 @@
 +# Google Chrome OS (aarch64-google) additions, composed after
 +# omarchy-base.packages and omarchy-aarch64.packages. The kernel and the signed
 +# depthcharge boot chain come with the image (the kernel travels as a [platform]
@@ -372,3 +372,9 @@ index 0000000..60dcff4
 +# (RTW88 Wi-Fi and Bluetooth).
 +linux-firmware-mediatek
 +linux-firmware-realtek
++
++# The platform implementation itself: the keyd map, the brightness rule and the
++# platform data the shell reads, which upstream keeps out of the shell and in a
++# platform repository (Apple's omarchy-mac-pkgs is the model). Its boot half,
++# omarchy-google-boot, joins this list with the boot chain.
++omarchy-google

@@ -1,0 +1,13 @@
+# A Chrome OS device has no function row: the top row emits *action* keys
+# (KEY_BACK, KEY_FORWARD, KEY_BRIGHTNESS{UP,DOWN}, KEY_VOLUME{UP,DOWN}, ...),
+# which keyd turns into the XF86 keysyms Omarchy binds. This file tells the
+# keybindings menu (bin/omarchy-menu-keybindings) which physical key each of
+# those keysyms sits on, so it shows the action row's legends instead of a
+# function row this keyboard does not have.
+#
+# Format: <keysym> <name>, both ^[A-Za-z0-9_]+$; one per line, '#' comments.
+XF86MonBrightnessUp F7
+XF86MonBrightnessDown F6
+XF86AudioRaiseVolume F10
+XF86AudioLowerVolume F9
+XF86AudioMute F8

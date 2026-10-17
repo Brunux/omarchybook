@@ -1,0 +1,88 @@
+#!/bin/bash
+# omarchy-google-setup-system [image-first-boot]
+#
+# The aarch64-google platform's setup-system: the Chrome OS quirks that are
+# Omarchy's business rather than a package's. See docs/recon.md §11 for the
+# dispatcher's contract and ORIGINS.md for where the shipped files come from.
+#
+# Two things are done here, and nothing else, on purpose:
+#
+#   * keyd has to run for the keyboard to have F-keys at all (this package
+#     ships etc/keyd/default.conf, which maps the action row); the unit ships
+#     disabled.
+#   * the desktop user has to be in the video group for brightnessctl to write
+#     /sys/class/backlight, which is what the shipped udev rule grants.
+#
+# Everything else the platform needs is either a file in a vendor directory
+# (systemd, udev and the shell read those directly) or a package dependency:
+#
+#   * audio: alsa-ucm-conf's MT8192 BootSequence is run by `alsactl restore`
+#     on every card add (alsa-utils), so installing the package is the fix --
+#     without it the PCMs fail with "no backend DAIs enabled" and the only sink
+#     is a Dummy Output.
+#   * zram: omarchy-settings ships
+#     /usr/lib/systemd/zram-generator.conf.d/90-omarchy.conf.
+#   * wireless-regdb: the package is required, and the world regulatory domain
+#     it starts with is not a failure -- NetworkManager narrows it from the
+#     access point.
+#   * the clock: the image enables systemd-timesyncd (plan Phase 2).
+#   * the Lock key: keyd leaves KEY_SLEEP alone, so logind suspends on it by
+#     itself, and Omarchy's shell locks the session while it sleeps.
+#
+# Both steps are done once and then recorded with a marker, so an administrator
+# who disables keyd or takes the user out of video afterwards is not overridden
+# on the next run. A quirk added later must therefore bring a *new* marker name
+# (keyd-enabled-2, say) instead of reusing one of these, or it would never apply
+# on a machine that already ran this version.
+set -euo pipefail
+
+usage() {
+	echo "Usage: ${0##*/} [image-first-boot]" >&2
+	exit 2
+}
+
+(( $# <= 1 )) || usage
+if (( $# == 1 )) && [[ $1 != image-first-boot ]]; then
+	usage
+fi
+
+# The dispatcher resolved the platform before calling, but do not act on a
+# machine the detector does not claim: a detector that breaks must stop setup,
+# not read as another platform.
+omarchy-hw-platform >/dev/null
+omarchy-hw-aarch64-google || exit 0
+
+(( EUID == 0 )) || { echo "${0##*/}: must run as root" >&2; exit 1; }
+
+marker_dir=/var/lib/omarchy-google
+install -d -m755 "$marker_dir"
+
+# ---------------------------------------------------------------------------
+# keyd: the keyboard has no F1-F10 without it
+# ---------------------------------------------------------------------------
+keyd_marker="$marker_dir/keyd-enabled"
+if [[ ! -f $keyd_marker ]]; then
+	echo "Enabling keyd (Chrome OS action row -> F-keys)"
+	systemctl enable keyd.service
+	# Enabling is enough for the next boot; start it now when systemd is
+	# actually running, so a first boot ends with a usable keyboard.
+	if [[ -d /run/systemd/system ]]; then
+		systemctl start keyd.service
+	fi
+	install -Dm644 /dev/null "$keyd_marker"
+fi
+
+# ---------------------------------------------------------------------------
+# video group: the other half of the backlight rule
+# ---------------------------------------------------------------------------
+video_marker="$marker_dir/video-group-configured"
+if [[ ! -f $video_marker ]]; then
+	while IFS= read -r user; do
+		[[ -n $user ]] || continue
+		if ! id -nG "$user" | tr ' ' '\n' | grep -qx video; then
+			echo "Adding $user to the video group (brightnessctl)"
+			usermod -aG video "$user"
+		fi
+	done < <(getent group wheel | cut -d: -f4 | tr ',' '\n')
+	install -Dm644 /dev/null "$video_marker"
+fi

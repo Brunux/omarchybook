@@ -179,6 +179,14 @@ shopt -u nullglob
 ((${#platform_pkgs[@]})) ||
 	die "no packages in $PLATFORM_REPO; build the kernel first (Phase 1)"
 cp "${platform_pkgs[@]}" "$ROOTFS/packages/"
+
+# Refresh the persistent cache with the same files. pacman reuses a cached file
+# that merely has the right name, and this bundle republishes a package under an
+# unchanged version whenever its recipe or patch changes (the build stamps are
+# content-based, not version-based), so a stale entry would fail the repository
+# checksum at install time and abort the whole transaction.
+cp -f "${platform_pkgs[@]}" "$PACMAN_CACHE/"
+
 # The find must run inside the chroot: on the host /packages does not exist.
 # Only the packages themselves are passed -- repo-add reads each `.sig` next to
 # its package (that is where %PGPSIG% comes from) but would choke on them as

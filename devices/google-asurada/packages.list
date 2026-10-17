@@ -26,8 +26,15 @@ linux-firmware-realtek
 vboot-utils
 depthcharge-tools
 
+# The platform implementation the aarch64-google lifecycle resolves to
+# (platform/omarchy-google, built into [platform] like the kernel): the keyd
+# map, the brightness rule, the platform data the shell reads and the
+# setup-system leaf. Its boot half is omarchy-google-boot, Phase 5's package.
+omarchy-google
+
 # Keyboard: a Chromebook action row has no F1-F10, and keyd supplies them. The
-# mapping and its exclusions are a device quirk (devices/google-asurada/quirks).
+# mapping and its exclusions ship in that platform package, not here: they are
+# keyed to the `google` family rather than to this device.
 keyd
 
 # Audio. The MT8192 sound card needs its ALSA UCM BootSequence run (alsa-utils

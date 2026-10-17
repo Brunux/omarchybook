@@ -317,6 +317,33 @@ detected!" aborts `prepare()`). So killing a kernel build and re-running it resu
 it already compiled; a recipe whose *patch text* changed over such a tree is a conflict to resolve
 by hand (`rm -rf` that `src/`), not something to paper over.
 
+**Verifying anything inside a built rootfs needs the same mounts the build uses.** A bare
+`chroot "$ROOTFS"` fails in confusing ways: `omarchy-hw-platform` — and anything else using bash
+process substitution — dies with `/dev/fd/63: No such file or directory` unless `/dev` and `/proc`
+are mounted, and `pacman -U` refuses with `could not open file: /etc/mtab` / `could not determine
+filesystem mount points` unless `CheckSpace` is off (which is why the build comments it out). So
+bind `/dev`, `/proc` and `/sys` first, and either disable `CheckSpace` or make the rootfs a mount
+point. For that last part `mount --bind "$ROOTFS" "$ROOTFS"` does **not** work: a plain bind does
+not carry the submounts, so it *hides* the `/dev`, `/proc` and `/sys` just mounted under it and the
+chroot looks emptier than before — use `--rbind`. Always unmount afterwards: `build-rootfs.sh`
+refuses to run while anything is still mounted under the rootfs, on purpose.
+
+One build printed `libfakeroot internal error: payload not recognized!` from makepkg's
+`tidy_install`. It did not reproduce on a rebuild, the package was well-formed (`pacman -U`
+installed it, every entry `root/root`) and no other recipe has shown it, so treat it as fakeroot
+noise unless it coincides with a broken package.
+
+**A republished package keeps its version, so the pacman cache has to be refreshed.**
+`build-rootfs.sh` copies the bundle into the image's `/packages` *and* into `$PACMAN_CACHE` because
+pacman reuses a cached file that merely has the right name. The stamps are content-based: changing a
+recipe or the vendored patch republishes, say, `omarchy-dev` under the same
+`4.0.0.r7026.g51bfd1d-1`, and a stale cache entry then fails the repository checksum and aborts the
+transaction — which is what happened once, at the very end of a twenty-minute build, after the patch
+edit above. The same tension one level up is *not* solved here: a machine whose database already
+holds that version will not upgrade to the republished bytes. A version-bump policy per patch
+revision (or publishing the bundle as a real repository) belongs to the release/upgrade work of
+Phase 6, together with the image carrying no `[platform]` repository at all.
+
 ## 10. The `[platform]` bundle: what it carries, and its signing (Phase 1)
 
 **What is in it.** `linux-omarchy-book` + `-headers` (`scripts/build-kernel.sh`, from
@@ -414,12 +441,30 @@ platform adds) do not apply and are left out.
 `/usr/lib/modprobe.d/`, `/usr/lib/tmpfiles.d/`, `/usr/lib/NetworkManager/`), which need no enable
 step because systemd/udev/NetworkManager read the vendor path directly.
 
+**Verified in a built rootfs (Phase 4).** The reader takes the flat path literally —
+`key_names_file=/usr/share/omarchy-platform/key-names` in `bin/omarchy-menu-keybindings` — so the
+platform package installs there and not under a per-platform directory. With `omarchy-google`
+installed in a built image, `omarchy-lifecycle-dispatch setup-system image-first-boot` exits 0,
+enables `keyd` (symlink in `/etc/systemd/system/multi-user.target.wants/`), adds the `wheel` members
+to `video` and writes its markers into `/var/lib/omarchy-google/`; a second run writes nothing.
+`systemctl enable` works offline, in an image build, while `start` is guarded by
+`/run/systemd/system`. The leaf uses "members of `wheel`" as its notion of the desktop user because
+a Chrome OS image has no better marker; on an image built from ALARM's tarball that is both the
+provisioned user and ALARM's own `alarm` account — which is why that account is now a hygiene item
+in plan Phase 6.
+
 ## Still open (need a chroot or hardware — not answerable read-only)
 
 1. **Resolved**: the built `depthcharge-tools` installs no kernel/initramfs hooks on Arch (verified
    from the package file list), so they need not be disabled as on Debian.
-2. **Vendored** the vboot developer keys into `boot/devkeys/` (from `vboot_reference`
-   `10343b821`, recorded in `boot/devkeys/README.md`); still to confirm a signed kpart
-   verifies with `futility show` once `depthcharge-tools` is built.
-3. `pacman -U` / `mkinitcpio` behavior inside the Phase 1/2 chroot.
-4. Whether LUKS is wanted later (plan §8) and whether the SD card must self-install to eMMC (assumed yes).
+2. **Resolved**: the vboot developer keys are vendored into `boot/devkeys/` (from `vboot_reference`
+   `10343b821`, recorded in `boot/devkeys/README.md`), and a kpart built with them verifies —
+   `futility show` reports `Body verification succeeded` (plan Phase 1, §10 above).
+3. **Resolved**: `pacman -U` and `mkinitcpio` behave as expected inside the Phase 1/2 chroot — the
+   package installs over ALARM's `linux-aarch64`, which ours conflicts with, and `mkinitcpio -P`
+   builds both images from the preset (§9, plan Phase 1).
+4. **Open**: whether LUKS is wanted later (plan §8) and whether the SD card must self-install to
+   eMMC (assumed yes). A maintainer decision rather than a recon question; Phase 6 has the tooling.
+5. **Open**: the exact versions the first working boot ends up holding, which is the whole pinning
+   policy of plan §3. §5 records what the repositories offer, not what the card ends up holding —
+   only a boot on hardware closes this, in Phase 7.

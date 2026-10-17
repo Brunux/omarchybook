@@ -23,8 +23,9 @@ Hayato, with:
 1. **our kernel** (mainline 7.2.7 plus the MT8192 patches that already boot this machine);
 2. **our boot chain** (ChromeOS GPT plus a signed depthcharge FIT in the kernel partition), because
    the Hayato has no UEFI and Omarchy's aarch64 path is UEFI + GRUB/Limine;
-3. **our device quirks** (keyd for a keyboard with no F1–F10, the ALSA UCM boot sequence, the
-   backlight udev rule, RTW88 firmware, zram);
+3. **our device layer** (the `aarch64-google` platform package, `platform/omarchy-google/`: keyd for
+   a keyboard with no F1–F10, the ALSA UCM boot sequence, the backlight udev rule, RTW88 firmware,
+   zram);
 4. reproducible artifacts built **away from the device**: a bootable microSD image, a rootfs
    tarball, a signed kpart and SHA256SUMS, plus install/backup/restore tooling and a check report.
 
@@ -212,13 +213,20 @@ contain.
 ```
 omarchybook/
   devices/google-asurada/     deviceinfo, kernel-cmdline.conf, modules-initfs,
-                              packages.list, quirks/ (keyd, udev, ucm, firmware)
+                              packages.list, PROVENANCE.md
   kernels/mediatek-mt81/      version, config.aarch64, patches/{series,*.patch},
                               PKGBUILD, APKBUILD.reference (upstream, reference only)
   packages/                   base.list (ALARM), omarchy.list (the Omarchy
                               packages installed explicitly; the desktop set
                               itself is composed from the runtime's own lists),
                               aarch64-filter.list (x86-only drops and substitutions)
+  platform/omarchy-google/    the aarch64-google implementation, the role
+                              upstream gives omarchy-mac-pkgs: PKGBUILD, the
+                              setup-system entrypoint and script, the keyd map,
+                              the backlight udev rule, the journald drop-in and
+                              the /usr/share/omarchy-platform data. Built into
+                              [platform] like the kernel; omarchy-google-boot
+                              (the boot chain) joins it in Phase 5
   keys/                       omarchy.gpg, the [omarchy] signing key (its repo
                               ships no keyring Arch Linux ARM's trusts)
   boot/                       lib-cgpt.sh, make-kpart.sh, the pacman hook that rewrites p1,
@@ -247,29 +255,49 @@ Each phase ends in a verifiable artifact; hardware checkpoints are explicit.
 
 ### Phase 0 — Recon spike (read-only, nothing written)
 
-- [ ] Run `omarchy-hw-platform` against a fake device tree whose root `compatible` is
+- [x] Run `omarchy-hw-platform` against a fake device tree whose root `compatible` is
       `google,asurada`, using `OMARCHY_PROC_ROOT`/`OMARCHY_SYS_ROOT`, and confirm it prints
-      `aarch64`.
-- [ ] Read `bin/omarchy-lifecycle-dispatch` and `install/hardware/platform-setup.sh` and answer:
+      `aarch64`. *The detector's rule is the vendor prefix, so stock Omarchy answers plain
+      `aarch64`; with the patch it answers `aarch64-google` (recon §1). Phase 3 re-verifies that
+      from both the image manifest and a `google,asurada` tree.*
+- [x] Read `bin/omarchy-lifecycle-dispatch` and `install/hardware/platform-setup.sh` and answer:
       **does a registered platform with an unimplemented operation error out or fall through?**
       If it errors, `aarch64-google` must implement every operation Omarchy calls, `reset-*`
-      included, or the family must not be registered at all.
-- [ ] Determine whether `setup-boot` runs inside the build chroot or at first boot.
-- [ ] `pacman -Si omarchy omarchy-settings` on an ALARM chroot: do they depend on `linux-omarchy`?
-- [ ] AUR: does `depthcharge-tools` (0.6.2-1, provides `depthchargectl`/`mkdepthcharge`) and
+      included, or the family must not be registered at all. *It falls through: an operation the
+      platform does not list exits 0, the five it does list and has no entrypoint for exit 3, and
+      only a broken entrypoint exits 1 (recon §2). So the family needs those five and nothing else,
+      and that is exactly what the patch registers.*
+- [x] Determine whether `setup-boot` runs inside the build chroot or at first boot. *At first boot:
+      `install/hardware/platform-setup.sh` is one of the deferred hardware leaves and is what calls
+      `setup-boot image-first-boot` and `setup-system image-first-boot` (recon §2), which is why the
+      image build stops at installing the package.*
+- [x] `pacman -Si omarchy omarchy-settings` on an ALARM chroot: do they depend on `linux-omarchy`?
+      *Neither does (recon §3), which is what lets `linux-omarchy-book` own the kernel without a
+      dependency fight; `omarchy-settings` does depend on `plymouth` (recon §8).*
+- [x] AUR: does `depthcharge-tools` (0.6.2-1, provides `depthchargectl`/`mkdepthcharge`) and
       `vboot-utils` (provides `cgpt` and `crossystem`) ship `futility` and
       `/usr/share/vboot/devkeys`? Whatever is missing gets vendored into our `[platform]` bundle.
-- [ ] Confirm how the `depthcharge-tools` system hooks behave on Arch (they guess a kernel
+      *`futility` and `cgpt` both come from ALARM's `vboot-utils`; it ships **no** devkeys, so
+      `boot/devkeys/` vendors them with their provenance (recon §7, §10), and a kpart built with
+      them verifies with `futility show` (Phase 1).*
+- [x] Confirm how the `depthcharge-tools` system hooks behave on Arch (they guess a kernel
       partition from `/proc/cmdline`; on Debian they had to be disabled or they break the build).
-- [ ] Availability check on ALARM for: `keyd`, `alsa-ucm-conf`, `alsa-utils`, `linux-firmware`
+      *It installs no kernel or initramfs hook at all, so nothing had to be disabled (recon §7).*
+- [x] Availability check on ALARM for: `keyd`, `alsa-ucm-conf`, `alsa-utils`, `linux-firmware`
       (MediaTek and RTW88 pieces), `mesa` (panfrost for Mali-G57), `chromium` (a known weak spot on
-      ARM), `zram-generator`, `wireless-regdb`.
+      ARM), `zram-generator`, `wireless-regdb`. *All present, versions in recon §5 (`keyd 2.6.0-5`,
+      `alsa-ucm-conf`, `chromium`, `zram-generator`, `wireless-regdb`) and §11 (the rest of the
+      device set, all of it installed in the built image); Mesa and the Mali firmware come with
+      `mesa`/`linux-firmware`, neither needs a vendor split on this part.*
 - [ ] Record the exact versions that end up installed on the first working boot into
       `docs/recon.md` (that is the whole pinning policy: `IgnorePkg` for `linux-omarchy*`, nothing
-      else held).
+      else held). *Still open by construction — it needs the first boot on hardware (Phase 7); §5
+      records what the repositories offer, not what the card ends up holding.*
 
 **Acceptance:** every open question above answered with evidence (command plus output) in
 `docs/recon.md`, including the exact upstream patch surface the `aarch64-google` family needs.
+*Collapsed to recon §11 plus the vendored patch itself; only the first-boot version pin above still
+waits on hardware.*
 
 ### Phase 1 — Kernel as a pacman package
 
@@ -384,27 +412,55 @@ and `omarchy-version` reports `4.0.0.r7026.g51bfd1d-1`.
 
 ### Phase 4 — Device layer (Hayato)
 
-- [ ] Firmware: `linux-firmware` for the MediaTek SCP, RTW88/RTW88CE and Realtek Bluetooth pieces —
-      add vendor-split packages if ALARM breaks them up.
-- [ ] Audio: `alsa-ucm-conf` plus `alsa-utils` so the UCM **boot sequence** runs and the card
-      exposes a real sink; `pipewire-alsa` for ALSA-only applications.
-- [ ] Keyboard: `keyd` with our configuration (`Ctrl+Alt` plus the top row for VTs, `Search` plus
+- [x] Firmware: `linux-firmware` for the MediaTek SCP, RTW88/RTW88CE and Realtek Bluetooth pieces —
+      add vendor-split packages if ALARM breaks them up. *ALARM splits by vendor: the image carries
+      `linux-firmware`, `linux-firmware-mediatek` and `linux-firmware-realtek`, listed both in
+      `devices/google-asurada/packages.list` and in the platform's own list.*
+- [x] Audio: `alsa-ucm-conf` plus `alsa-utils` so the UCM **boot sequence** runs and the card
+      exposes a real sink; `pipewire-alsa` for ALSA-only applications. *The MT8192 card is only
+      usable once its UCM `BootSequence` has run, and alsa-lib runs that only on an explicit
+      `set _boot`: `alsactl restore` drives it on every card add through alsa-utils'
+      `90-alsa-restore.rules`, so installing the package is the whole fix (recon §11) — there is no
+      script of ours in that path.*
+- [x] Keyboard: `keyd` with our configuration (`Ctrl+Alt` plus the top row for VTs, `Search` plus
       the top row for F1–F10, the `cros_ec_buttons`/jack exclusions **before** the generic
       `k:0000:0000` entry, and the Lock key left alone but bound to the locker via `XF86Sleep`).
-      Package it as part of the `google` platform leaf so upstream can take it too.
-- [ ] Backlight: a udev rule for `brightnessctl` (group `video`, `g+w`) if Arch ships none.
-- [ ] `zram-generator` (already in Omarchy's own aarch64 list), `wireless-regdb`, journald and
-      clock settings.
-- [ ] `/usr/share/omarchy-platform/` — the five files are **flat**, not under a per-platform
-      directory (recon §11): `displays.conf` (backlight device rules), `key-names` (the Chromebook
-      action row, which has no F-keys) and `audio.json` describing what the MT8192 card hides.
-      `display-cutouts.json` and `keyrings` do not apply to a Chromebook panel.
-- [ ] The `omarchy-google` package: it owns those files, the keyd configuration, the brightnessctl
+      Package it as part of the `google` platform leaf so upstream can take it too. *The map and its
+      exclusions are `platform/omarchy-google/etc/keyd/default.conf`, ported verbatim from the
+      hardware-verified Debian sibling (its `ORIGINS.md` records what changed); the leaf enables the
+      unit, which otherwise ships disabled. The Lock key is left alone so logind keeps suspending on
+      it, and no session binding is needed: Omarchy's shell locks the session while it sleeps
+      (`omarchy-system-sleep-lock`).*
+- [x] Backlight: a udev rule for `brightnessctl` (group `video`, `g+w`) if Arch ships none.
+      *Arch's brightnessctl ships no udev or polkit file (checked), so the rule travels with the
+      platform package and `setup-system` adds the desktop users to `video`.*
+- [x] `zram-generator` (already in Omarchy's own aarch64 list), `wireless-regdb`, journald and
+      clock settings. *zram is Omarchy's own (its `omarchy-settings` ships
+      `/usr/lib/systemd/zram-generator.conf.d/90-omarchy.conf`); `wireless-regdb` is installed and
+      the world regulatory domain it starts with is not a failure, NetworkManager narrows it from
+      the access point; the package ships a bounded journald drop-in, because the device's flash is
+      small and slow; and the clock is systemd-timesyncd, enabled in Phase 2.*
+- [x] `/usr/share/omarchy-platform/` — the five files are **flat**, not under a per-platform
+      directory (recon §11). *`key-names` ships: Omarchy already binds the XF86 keysyms keyd
+      supplies, and this tells the keybindings menu which physical key carries each one.
+      `displays.conf` and `audio.json` are deliberately left out until the hardware run shows a
+      need — there is no evidence of a second backlight device to prefer or of a node worth hiding,
+      and both readers tolerate a missing file.*
+- [x] The `omarchy-google` package: it owns those files, the keyd configuration, the brightnessctl
       udev rule and the vendor drop-ins (`/usr/lib/udev`, `/usr/lib/systemd`, …), and its
       `setup-system` leaf (the `aarch64-google` implementation) applies the quirks idempotently.
+      *Built by `scripts/build-package.sh` into `[platform]` and signed like everything else;
+      `provides=omarchy-platform`, `groups=omarchy-platform-google`, named as upstream's Apple
+      implementation names itself, so a merged proposal needs no renames. The boot half is Phase 5's
+      `omarchy-google-boot`. It is registered in the vendored patch's
+      `install/omarchy-aarch64-google.packages` (the gap recon §11 found) and in the device list, so
+      the image installs it.*
 
 **Acceptance:** WiFi, Bluetooth, speaker, suspend on lid/power/Lock key and the backlight keys all
-work on the booted image, verified by the hardware run in Phase 7.
+work on the booted image, verified by the hardware run in Phase 7. *What the chroot already proves:
+the image installs `omarchy-google` from the signed bundle, `omarchy-lifecycle-dispatch setup-system`
+resolves to its entrypoint and enables keyd, adds the desktop users to `video` and writes its
+markers under `/var/lib/omarchy-google/`, and a second run changes nothing.*
 
 ### Phase 5 — Boot chain
 
@@ -427,6 +483,15 @@ work on the booted image, verified by the hardware run in Phase 7.
       an `.img.xz`, a rootfs tarball, a `vmlinuz.kpart` and `SHA256SUMS`.
 - [ ] A `lib-dist.sh` equivalent: never publish straight out of `$ROOTFS` (Wi-Fi PSKs, SSH host
       keys, machine-id); sanitize a copy and assert it clean.
+- [ ] Image hygiene from what Phase 4's verification turned up: ALARM's own `alarm` account
+      (uid 1000, in `wheel`, with a password set) travels in the tarball and must not reach a
+      release. Lock or delete it, and sweep for anything else the ALARM bootstrap leaves behind
+      before `make-release.sh` publishes (Phase 7's `check-system.sh` should assert it).
+- [ ] An upgrade path for the bundle. The image configures no `[platform]` repository, so neither
+      `linux-omarchy-book` nor `omarchy-google` can ever be updated on a device (recon §9); decide
+      whether a release publishes the bundle as a repository the image trusts, and give a
+      republished package — same version, new bytes, because a recipe or the vendored patch changed —
+      a version bump so an installed machine can actually move to it.
 - [ ] `write-sd.sh`, `install-emmc.sh` (rsync the running system onto `/dev/mmcblk0`, refusing the
       internal disk from the SD writer and the running root from either) and `install-kpart.sh`.
 - [ ] `backup-system.sh` and `restore-system.sh` ported from the working pair: raw GPT dumps, the
@@ -531,7 +596,8 @@ Still open:
 1. `git init` in `~/Dev/omarchybook`, `README.md`, `AGENTS.md` and `.gitignore`.
 2. `docs/plan.md` (this document) and `docs/recon.md` (the evidence already gathered in §2).
 3. `devices/google-asurada/` — `deviceinfo` translated, `kernel-cmdline.conf`, `modules-initfs`,
-   `packages.list` and `quirks/`.
+   `packages.list` and `PROVENANCE.md`. The platform implementation is *not* here but in
+   `platform/omarchy-google/` (Phase 4): it is keyed to the `google` family, not to this board.
 4. `kernels/mediatek-mt81/` vendored with its `version`, `config.aarch64` and `patches/series`,
    with a provenance note pointing at `debian-aarch64`.
 5. `boot/lib-cgpt.sh` and `boot/make-kpart.sh` ported.

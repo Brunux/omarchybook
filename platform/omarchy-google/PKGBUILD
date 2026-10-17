@@ -1,0 +1,50 @@
+# Maintainer: omarchybook
+# The Omarchy platform implementation for Google Chrome OS devices
+# (aarch64-google): the runtime half, which is what the vendored
+# 0001-aarch64-google patch resolves `setup-system` to (docs/plan.md Phase 4,
+# docs/recon.md §11).
+#
+# Upstream omarchy keeps the hardware layer out of the shell: a platform that
+# needs files of its own ships a package (omarchy-mac-pkgs is the model) and
+# bin/omarchy-lifecycle-dispatch runs what it installs. This is that package for
+# the Google family, published into the local [platform] bundle like the kernel:
+#
+#   /usr/lib/omarchy/google/setup-system          what the lifecycle runs
+#   /usr/bin/omarchy-google-setup-system          the work it does
+#   /usr/share/omarchy-platform/key-names         the action row, for the shell
+#   /etc/keyd/default.conf                        no F-keys on this keyboard
+#   /usr/lib/udev/rules.d/90-brightnessctl.rules
+#   /usr/lib/systemd/journald.conf.d/10-omarchy-google.conf
+#
+# The boot half (`setup-boot`, `update-verify`, /usr/lib/omarchy/google-boot) is
+# a separate package, omarchy-google-boot, because on this device rebooting is a
+# signed FIT in the kernel partition (plan Phase 5).
+
+pkgname=omarchy-google
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Omarchy platform for Google Chrome OS devices (aarch64-google): keyd map, backlight rule and platform data'
+arch=('aarch64')
+url='https://github.com/omacom/omarchy'
+license=('MIT')
+# The names the Apple implementation already uses (omarchy-mac,
+# omarchy-mac-boot), so a merged proposal needs no renames (docs/recon.md §11).
+groups=('omarchy-platform-google')
+provides=('omarchy-platform')
+conflicts=('omarchy-platform')
+# What the shipped files configure: alsa-ucm-conf/alsa-utils are what make the
+# MT8192 UCM boot sequence run (alsactl restore on card add), brightnessctl is
+# what the udev rule grants access to, and keyd reads /etc/keyd/default.conf.
+depends=('alsa-ucm-conf' 'alsa-utils' 'brightnessctl' 'keyd' 'pipewire-alsa' 'systemd')
+# Config in /etc belongs to the administrator: leave a .pacnew on upgrade rather
+# than overwriting an edited map.
+backup=('etc/keyd/default.conf')
+checkdepends=('bash' 'coreutils' 'diffutils' 'findutils' 'grep' 'sed')
+
+package() {
+	"$startdir/install" "$pkgdir"
+}
+
+check() {
+	"$startdir/test/all"
+}
