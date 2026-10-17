@@ -16,6 +16,17 @@ somewhere (a USB stick, `/home/omarchy` or a copy over SSH):
 scripts/check-system.sh /path/to/omarchybook | tee reports/<date>-<what>.txt
 ```
 
+A card written by `scripts/write-sd.sh` does **not** carry this repository (only
+the boot and platform packages are shipped to the device), but the machine that
+wrote it is the same machine: the checkout is on the internal disk, so boot the
+card, log in as `omarchy`, mount the internal disk and run the script from there.
+
+```sh
+sudo mount /dev/mmcblk0p3 /mnt            # the internal disk, not the card
+cd /mnt/home/brunux/Dev/omarchybook
+scripts/check-system.sh "$PWD" | tee reports/$(date +%Y-%m-%d)-first-boot.txt
+```
+
 `check-system.sh` reads only; it changes nothing. Pass the checkout so it can also
 compare the package manifests with the system. Run it as the desktop user: the
 session and audio checks belong to that user, and the privileged reads go through
