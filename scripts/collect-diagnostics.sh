@@ -52,7 +52,12 @@ say "Packaging and keys"
 printf '  keyring UIDs matching omarchy/book/build:\n'
 sudo -n pacman-key --list-keys 2>/dev/null | grep -iE 'omarchy|book|build' | sed 's/^/    /' || true
 sudo -n pacman-key --list-keys 2>/dev/null | awk '/^pub/{n++} END{printf "  (%d keys in the keyring)\n", n}'
-run pacman -Q linux-omarchy-book linux-omarchy
+run pacman -Q linux-omarchy-book linux-omarchy-book-headers
+printf '  exact-name hits for linux-omarchy/linux-omarchy-headers (pacman -Q matches by pattern): '
+pacman -Qq 2>/dev/null | grep -xE 'linux-omarchy(-headers)?' | tr '\n' ' ' || true
+printf '\n'
+printf '  keyring files shipped for the first boot to populate:\n'
+ls -l /usr/share/pacman/keyrings/ | sed 's/^/    /' || true
 run grep -n 'IgnorePkg\|^\[platform\]\|^\[omarchy\]\|^Server' /etc/pacman.conf
 
 # ---------------------------------------------------------------------------
@@ -70,7 +75,22 @@ tail_run 40 sudo -n dmesg --level=err,warn
 say "Session (sddm)"
 run systemctl status --no-pager sddm.service
 tail_run 60 sudo -n journalctl -b -u sddm --no-pager
-tail_run 80 sudo -n journalctl -b --no-pager --grep 'greeter|start-hyprland|uwsm|hyprland|wayland|sddm-helper|pam_unix|session' -i
+# journalctl's --grep takes one pattern and its -i is a different option, so
+# filter with grep instead: this is the greeter's own dialogue (login attempts,
+# PAM) and the compositor SDDM starts for it.
+printf '  greeter, compositor and PAM lines:\n'
+sudo -n journalctl -b --no-pager 2>/dev/null |
+	grep -iE 'greeter|start-hyprland|uwsm|hyprland|wayland|sddm-helper|pam_unix|session-' |
+	tail -n 60 | sed 's/^/    /' || true
+# The greeter's compositor logs to its own runtime directory, next to the socket
+# it talks to SDDM over. Nothing here means the greeter never got that far.
+printf '  greeter runtime dirs and compositor log:\n'
+ls -la /run/user/*/hypr/*/ 2>/dev/null | sed 's/^/    /' | head -20 || true
+for _f in /run/user/*/hypr/*/hyprland.log; do
+	[ -f "$_f" ] || continue
+	printf '    --- %s\n' "$_f"
+	sudo -n tail -n 30 "$_f" 2>/dev/null | sed 's/^/    /' || true
+done
 [ -r /var/log/sddm.log ] && tail_run 40 cat /var/log/sddm.log
 run cat /usr/share/sddm/hyprland.lua 2>/dev/null
 run ls -l /usr/share/sddm/hyprland.lua /usr/share/wayland-sessions/ /usr/share/sddm/themes/

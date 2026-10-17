@@ -19,7 +19,9 @@ pkgname=("$pkgbase" "$pkgbase-headers")
 # makepkg sources it (not the kernel's generated `version`, which lives in
 # $_srcname and is read by the package functions).
 pkgver=$(<version)
-pkgrel=1
+# pkgrel 2: the netfilter matches Omarchy's default firewall uses (xt_limit,
+# ip6t_rt, ip6t_hl) and CRYPTO_USER, which bluez's modules-load.d asks for.
+pkgrel=2
 pkgdesc='Linux for the Google Hayato Chromebook (MediaTek MT8192, Omarchy)'
 url='https://omarchy.org'
 arch=(aarch64)
@@ -60,7 +62,7 @@ source=(
 )
 sha256sums=(
   'SKIP'
-  '0e4e548897de1b1b1874bb24070d1854d95369d8370a7f95af35ad8c6e711ee3'
+  '05876618c34cb2c57ddc8965119f29e4261f0e4dd77b7c6e42c5ffafdecf22eb'
 )
 
 # The kernel tarball signature is not verified yet (sha256sums is SKIP for it);

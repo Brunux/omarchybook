@@ -168,6 +168,20 @@ chroot "$ROOTFS" pacman-key --add /tmp/platform.pub
 chroot "$ROOTFS" pacman-key --lsign-key "$PLATFORM_KEY_FPR"
 rm -f "$ROOTFS/tmp/platform.pub"
 
+# An image does not keep the keyring it is built with: the first boot makes the
+# machine's own (`pacman-key --init` + `--populate` in
+# install/post-install/pacman.sh, run by omarchy-provision-hardware), which
+# replaces this one and with it the lsign above. --populate trusts every keyring
+# installed under /usr/share/pacman/keyrings, so the key has to be shipped the
+# way the other keyrings are shipped -- omarchy.gpg and omarchy-trusted arrive
+# with the omarchy-keyring package -- and not merely imported here. Without this
+# the image trusts nothing from [platform] after its first boot: not the kernel
+# it boots and not the packages an update would install (docs/recon.md §14).
+log "Shipping the [platform] keyring into the image"
+install -d -m 0755 "$ROOTFS/usr/share/pacman/keyrings"
+install -m 0644 "$PLATFORM_KEY_FILE" "$ROOTFS/usr/share/pacman/keyrings/omarchy-platform.gpg"
+printf '%s:4:\n' "$PLATFORM_KEY_FPR" > "$ROOTFS/usr/share/pacman/keyrings/omarchy-platform-trusted"
+
 # ---------------------------------------------------------------------------
 # [platform] bundle
 # ---------------------------------------------------------------------------
@@ -380,6 +394,26 @@ if ! chroot "$ROOTFS" env USERNAME="$USERNAME" \
 	tail -n 100 "$ROOTFS/var/log/omarchy-install.log" >&2 || true
 	die "omarchy-apply-system failed (see /var/log/omarchy-install.log in the rootfs)"
 fi
+
+# SDDM's state file, so the greeter can log in on the machine's very first boot.
+# Omarchy's SDDM theme has no user field: it calls sddm.login(userModel.lastUser,
+# ...), and SDDM reads lastUser from this file. Upstream's
+# omarchy-provision-owner writes exactly this in configure_login(), right before
+# it autologins the owner; this port ships the owner in the image instead of
+# provisioning it on the machine, so the file -- and not the one-boot autologin,
+# which upstream writes only because its owner has just typed a password in the
+# wizard -- belongs to the image. Without it the password field has no user to
+# send and every login fails without one line in the journal (docs/recon.md
+# §14). Session=omarchy.desktop matches
+# /usr/local/share/wayland-sessions/omarchy.desktop, the session the theme looks
+# for by name.
+log "Writing SDDM's state file for the first login"
+install -d -m 0750 "$ROOTFS/var/lib/sddm"
+printf '[Last]\nSession=omarchy.desktop\nUser=%s\n' "$USERNAME" > "$ROOTFS/var/lib/sddm/state.conf"
+chmod 0644 "$ROOTFS/var/lib/sddm/state.conf"
+# Inside the chroot: the host has no sddm user, and the package's own uid is not
+# a fixed number (systemd-sysusers allocates it when the package is installed).
+chroot "$ROOTFS" chown sddm:sddm /var/lib/sddm /var/lib/sddm/state.conf
 
 # Plan §3's whole pinning policy: nothing but IgnorePkg for the linux-omarchy
 # family, so an update can never pull a different kernel over the one this port

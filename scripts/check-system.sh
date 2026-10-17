@@ -494,10 +494,16 @@ else
 			fail "keyd is not active: no F-keys and no remapped top row"
 		fi
 		_klog="$($SUDO journalctl -b -u keyd --no-pager 2>/dev/null || true)"
-		if has_match "$_klog" 'matched|device added'; then
-			ok "keyd matched a device: $(firstline matching "$_klog" 'matched|device added' 1)"
+		# keyd 2.6 logs a device it takes over as "DEVICE: match ...", not
+		# "matched", so the log alone under-reports; the device keyd then creates
+		# is the better answer, and on a boot where keyd started before the
+		# modules it waits for, the log can hold nothing at all.
+		if has_match "$(cat /proc/bus/input/devices)" 'keyd virtual keyboard'; then
+			ok "keyd's virtual keyboard is present: it has taken over the internal one"
+		elif has_match "$_klog" 'DEVICE: *match'; then
+			ok "keyd matched a device: $(firstline matching "$_klog" 'DEVICE: *match' 1)"
 		else
-			warn "keyd's log for this boot says nothing about a matched device"
+			warn "keyd's log says nothing about a matched device and no keyd virtual keyboard is present"
 		fi
 	else
 		fail "keyd is missing"

@@ -682,7 +682,7 @@ The measurements behind them, all from the built rootfs or from the checkout:
 - **Audio is the MT6359 + RT1015P + RT5682 combination**, whose UCM files are
   `/usr/share/alsa/ucm2/MediaTek/mt8192/mt6359-rt1015p-rt5682/`, and the desktop is driven through
   `pactl` (volume, sink switching, tuning) as well as `wpctl`.
-- **The kernel's name is `-mt81`** (`CONFIG_LOCALVERSION`), so the package version (`7.2.7-1`) and
+- **The kernel's name is `-mt81`** (`CONFIG_LOCALVERSION`), so the package version (`7.2.7-2`) and
   `uname -r` (`7.2.7-mt81`) only agree in their numeric part: the report compares that part and the
   flavour separately, or a stale `/boot` would pass for an up-to-date kernel partition.
 - **The FIT carries the root UUID it was built for.** `futility show` on a kpart ends with
@@ -725,6 +725,67 @@ sections down. That is also why this host cannot test them: the shell this repos
 from runs under a namespace whose PID 1 is `init` and where `/run/systemd/system` does not exist, so
 its readings are the sandbox's, and the script skips them exactly as it would in a chroot. The live
 half is exercised for the first time by the first booted card, which is Phase 7's acceptance.
+
+**What the first booted card taught (2026-10-17).** The card booted and produced
+`reports/2026-10-17-first-boot.txt` (95 ok, 3 warn, 2 FAIL, 2 skip, run from tty1 before any desktop
+existed) with `reports/2026-10-17-diagnostics.txt` as its journal-level context
+(`scripts/collect-diagnostics.sh`). Everything the report says about this hardware is right --
+`google,hayato-rev1`, panfrost `mali-g57` on `card1-eDP-1`, the `664 video` backlight, the MT6359
+audio profile at `HiFi` with both sinks and a monitor source (which is what proves the
+`pipewire-pulse` fix), `DFS-FCC`, Bluetooth on `asuara`, s2idle, 41 declared packages -- and the two
+FAILs and three warns resolved into two porting bugs, one kernel gap, and readings of a boot that is
+not the one the report was run on:
+
+- **ufw cannot start: its rules use netfilter matches this kernel did not build.** `ufw.service`
+  exits 1 with `line 24: RULE_APPEND failed (No such file or directory): rule in chain
+  ufw6-before-input` and `Problem running '/etc/ufw/before6.rules'`, preceded by `Extension limit
+  revision 0 not supported, missing kernel module?` and the same for `rt`. `/etc/ufw/before6.rules`
+  line 24 *is* `-A ufw6-before-input -m rt --rt-type 0 -j DROP`; the `hl` matches are `ip6t_hl`, and
+  `before.rules` line 63 logs with `-m limit`. With `XT_MATCH_LIMIT`, `IP6_NF_MATCH_RT` and
+  `IP6_NF_MATCH_HL` off, one failing rule aborts the whole `*filter` restore, so the chains the
+  following lines append to never exist. They are modules now, together with `CRYPTO_USER=m` for
+  `/usr/lib/modules-load.d/bluez.conf`'s `crypto_user`, which every boot logged as `Failed to find
+  module 'crypto_user'` (kernels/mediatek-mt81/PROVENANCE.md records the three edits).
+- **The SDDM greeter cannot log anyone in on a first boot, and the journal says nothing.** `sddm`
+  starts, the Wayland greeter connects (`Message received from greeter: Connect`) and then not one
+  more line: no `[PAM] Authenticating`, no failure, for any account, while the same passwords work on
+  tty1. Omarchy's theme has no user field; it calls `sddm.login(userModel.lastUser, ...)`
+  (`default/sddm/omarchy/Main.qml`), and `lastUser` comes from `/var/lib/sddm/state.conf`, which did
+  not exist -- so the greeter sends an empty user, which SDDM refuses before its socket server ever
+  logs the `Login` message the report was looking for. Upstream writes that file in
+  `omarchy-provision-owner`'s `configure_login()`, because on a real Omarchy machine the owner
+  account is *created* at first boot. This port ships the owner in the image, so `build-rootfs.sh`
+  writes the same file (`[Last] User=omarchy`, `Session=omarchy.desktop`, the session that
+  `/usr/local/share/wayland-sessions/omarchy.desktop` provides). The one-boot autologin upstream
+  writes beside it is deliberately not shipped: it exists because upstream's owner has just typed a
+  password in the wizard, and this image's accounts are the documented ones (plan §3, decision 8).
+- **The `[platform]` key does not survive the first boot, because that boot remakes the keyring.**
+  `build-rootfs.sh` imports `platform.pub` and `--lsign`s it, and the report still FAILs. The image
+  carries no pacman master key on purpose (every machine would share one), so the first boot runs
+  `pacman-key --init && pacman-key --populate` -- the request `install/post-install/pacman.sh` leaves
+  in the manifest, run by `omarchy-provision-hardware` -- into a fresh keyring, and only what is
+  installed under `/usr/share/pacman/keyrings` comes back: the card keeps Omarchy's key and loses
+  ours. The key is now shipped the way `omarchy-keyring` ships `omarchy.gpg`, as
+  `/usr/share/pacman/keyrings/omarchy-platform.gpg` plus `omarchy-platform-trusted` naming its
+  fingerprint, which is what `--populate` with no keyring name reads.
+- **Two readings are of a different boot, and one pattern was simply wrong.** The `no swap` FAIL and
+  the `ufw is not active` warn belong to the first boot; in the next one swap is up on `/dev/zram0`
+  (priority 100, zstd, 3.7 GiB) and ufw is filtering on the rules it did manage to load. That also
+  settles a design question: `/etc/systemd/zram-generator.conf` does not exist and does not need to,
+  because zram-generator's own unit reads the drop-in
+  `/usr/lib/systemd/zram-generator.conf.d/90-omarchy.conf` alone. The first boot's own
+  `journalctl -b -1` is the last thing missing to explain its swap, and the keyd warn was the script:
+  it looked for `matched|device added` while keyd 2.6 logs `DEVICE: match 0000:0000:af5c732c
+  /etc/keyd/default.conf (cros_ec)` and then creates `keyd virtual keyboard`. The check asks for that
+  device first now, with the log as its fallback.
+
+**Known noise, the same on the sibling's verified machine.** `bpf-restrict-fs: Failed to link
+'restrict_filesystems' LSM BPF program: Operation not supported` (systemd's own program, with
+`BPF_LSM=y` and `bpf` in `CONFIG_LSM`), the `sbs-battery` property failures, `mt6359-keys`/
+`mt6359-accdet: Failed to locate of_node`, `i2c_hid_get_input: IRQ triggered but there's no data`,
+`rt5682 ... ASoC: source widget I2S1 overwritten`, `[Firmware Bug]: VHE-capable CPU without EL2
+virtual timer interrupt` and `coreboot_table ... probe ... failed with error -22` are this hardware's,
+not this port's.
 
 ## Still open (need a chroot or hardware — not answerable read-only)
 

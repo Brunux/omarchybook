@@ -613,11 +613,20 @@ Phase 7's, on hardware.*
       bind-mounted: 39 ok, 6 warn, 0 FAIL, 13 skip), and the live half stands down off a real boot
       (chroot, or the sandboxed shell this repository is developed in), so what Phase 7 adds is its
       output on hardware.
-- [ ] Store the output in `reports/`, one file per boot worth keeping. (`reports/README.md` says
-      what a report has to carry; the directory is empty until the first boot.)
+- [x] Store the output in `reports/`, one file per boot worth keeping. **Two files from the first
+      card** (2026-10-17): `2026-10-17-first-boot.txt` (95 ok, 3 warn, 2 FAIL, 2 skip — run from
+      tty1, so the two session checks are the two skips) and `2026-10-17-diagnostics.txt`, its
+      journal-level context (`scripts/collect-diagnostics.sh`). Every FAIL and warn is mapped in
+      recon §14, and what the mapping found closes three of them: ufw needs netfilter matches the
+      kernel was not building, the greeter can never log in without `/var/lib/sddm/state.conf`
+      (upstream writes it when it creates the owner at first boot; this port ships the owner in the
+      image, so the image writes it), and the `[platform]` key the build lsigns is replaced by the
+      first boot's own `pacman-key --populate` unless it is shipped as a keyring. The next report is
+      taken from the desktop session, which is what closes the two skips.
 
 **Acceptance:** a report from a booted card with no FAIL, and every FAIL mapped to a known
-regression rather than a hypothetical.
+regression rather than a hypothetical. *The first card's report is what the mapping above is made
+of; it is not yet the report the acceptance asks for.*
 
 ### Phase 8 — Upstream proposal
 
