@@ -45,6 +45,27 @@ need_root() { [ "$(id -u)" -eq 0 ] || die "this command must run as root (use su
 du_mib()   { du -sxk "$1" 2>/dev/null | awk '{ print int(($1 + 1023) / 1024) }'; }
 file_mib() { echo $(( ($(stat -c %s "$1") + 1048575) / 1048576 )); }
 
+# The standard device nodes a chroot's own /dev needs, created only where one is
+# missing or is not a device. A plain file where a device belongs -- a stray
+# redirect, a copy of /dev/null -- costs much more than it looks: the build runs
+# for an hour and then makepkg fails inside fakeroot, as the builder, with
+# "/dev/null: Permission denied" and "Failed to create the directory $BUILDDIR".
+#
+# Call this only while the host's /dev is NOT bound over that directory: mknod
+# through the bind would replace the host's own devices.
+device_nodes() {
+	local root="$1" spec name type major minor
+
+	mkdir -p "$root/dev"
+	for spec in 'null c 1 3' 'zero c 1 5' 'full c 1 7' 'random c 1 8' 'urandom c 1 9' 'tty c 5 0'; do
+		set -- $spec
+		name="$1" type="$2" major="$3" minor="$4"
+		[ -c "$root/dev/$name" ] && continue
+		rm -f "$root/dev/$name"
+		mknod -m 666 "$root/dev/$name" "$type" "$major" "$minor"
+	done
+}
+
 # ---------------------------------------------------------------------------
 # Device
 # ---------------------------------------------------------------------------

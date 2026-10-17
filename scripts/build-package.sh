@@ -49,6 +49,7 @@ unmount_build() {
 	done
 }
 mount_build() {
+	device_nodes "$BUILD_CHROOT"
 	for m in dev proc sys; do
 		mountpoint -q "$BUILD_CHROOT/$m" || mount --bind "/$m" "$BUILD_CHROOT/$m"
 	done

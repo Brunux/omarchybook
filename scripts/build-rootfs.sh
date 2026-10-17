@@ -91,6 +91,8 @@ log "Mounting virtual filesystems"
 mkdir -p "$PACMAN_CACHE"
 mountpoint -q "$ROOTFS/var/cache/pacman/pkg" ||
 	mount --bind "$PACMAN_CACHE" "$ROOTFS/var/cache/pacman/pkg"
+# Before the host's /dev is bound over it (lib.sh's device_nodes says why).
+device_nodes "$ROOTFS"
 for m in dev proc sys; do
 	mountpoint -q "$ROOTFS/$m" || mount --bind "/$m" "$ROOTFS/$m"
 done
