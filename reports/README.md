@@ -5,7 +5,11 @@ One file per boot worth keeping (docs/plan.md Phase 7). A report is the output o
 learning from: the first boot that works, a boot that failed and what it said, a
 boot after a change.
 
-Nothing has booted on hardware yet, so this directory is empty on purpose.
+The first card booted on 2026-10-17 and left two files: `2026-10-17-first-boot.txt`, taken from
+tty1 before any desktop session existed, and `2026-10-17-diagnostics.txt`, its journal-level context
+(`scripts/collect-diagnostics.sh`, not a report itself but the evidence a FAIL gets mapped against --
+recon §14). A report taken from the desktop session belongs beside them: the same boot is worth two
+reports when the first one could not see the session.
 
 ## Making one
 
@@ -30,7 +34,15 @@ scripts/check-system.sh "$PWD" | tee reports/$(date +%Y-%m-%d)-first-boot.txt
 `check-system.sh` reads only; it changes nothing. Pass the checkout so it can also
 compare the package manifests with the system. Run it as the desktop user: the
 session and audio checks belong to that user, and the privileged reads go through
-passwordless `sudo -n`.
+passwordless `sudo -n`. Run from tty1 with `omarchy` not yet logged into a desktop
+session, the session checks report themselves skipped -- that is what an
+un-booted-session report looks like, and why the same boot gets a second report
+from the desktop session.
+
+`scripts/collect-diagnostics.sh` is the companion for a boot that needs
+explaining: it collects the journal, the units and the runtime state a FAIL's
+cause lives in, and it is what `2026-10-17-diagnostics.txt` is. Run it the same
+way, with the output beside the report it explains.
 
 ## What a report has to carry
 
