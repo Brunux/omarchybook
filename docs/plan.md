@@ -417,7 +417,10 @@ hardware stays reachable.*
 - [x] Install `omarchy`, `omarchy-settings` and `omarchy-nvim`, plus the Omarchy package list, the
       way the ISO does it. *`packages/omarchy.list` is installed explicitly and the desktop set is
       composed from the checkout's own lists (`omarchy-base` + `omarchy-aarch64` + the platform's,
-      minus `omarchy-x86_64-only.packages`) in one transaction.*
+      minus `omarchy-x86_64-only.packages`) in one transaction.* Phase 7 added one package from
+      `omarchy-other.packages` to `packages/omarchy.list` — `pipewire-pulse`, which Omarchy's own
+      audio and screen-recording commands drive through `pactl` (recon §14); the rest of that list
+      stays out for the reasons in §8.
 - [x] Run the `install/` phases in the chroot as their installer does, deferring machine-specific
       hardware leaves to first boot when that is what their model expects
       (`/var/lib/omarchy/image/target` with `format=1`, `platform=google`); otherwise run them at
@@ -598,12 +601,20 @@ Phase 7's, on hardware.*
 
 ### Phase 7 — Hardware validation
 
-- [ ] Port `check-system.sh` to Arch and add the Omarchy-specific checks: `omarchy-hw-platform`
+- [x] Port `check-system.sh` to Arch and add the Omarchy-specific checks: `omarchy-hw-platform`
       prints `aarch64-google`; Hyprland starts on Mesa/Panfrost; the Quickshell session comes up;
       the audio profile is not `off` and there is no *Dummy Output*; the keyd mapping and the Lock
       key both behave; the brightness keys work as the desktop user; `linux-omarchy` is absent and
-      `linux-omarchy-book` installed; p1 holds a signed FIT.
-- [ ] Store the output in `reports/`, one file per boot worth keeping.
+      `linux-omarchy-book` installed; p1 holds a signed FIT. **Done:** `scripts/check-system.sh`,
+      with each check mapped to a measurement in recon §14 and the port's own decisions; it also
+      carries the first-boot manifest checks (a first boot that half-finishes is invisible
+      otherwise) and the FIT's `root=UUID=` against the running root. The package, file and
+      configuration half is exercised against the built rootfs (chroot rehearsal with the repository
+      bind-mounted: 39 ok, 6 warn, 0 FAIL, 13 skip), and the live half stands down off a real boot
+      (chroot, or the sandboxed shell this repository is developed in), so what Phase 7 adds is its
+      output on hardware.
+- [ ] Store the output in `reports/`, one file per boot worth keeping. (`reports/README.md` says
+      what a report has to carry; the directory is empty until the first boot.)
 
 **Acceptance:** a report from a booted card with no FAIL, and every FAIL mapped to a known
 regression rather than a hypothetical.

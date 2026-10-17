@@ -655,6 +655,77 @@ watch. `sgdisk` is also absent from this host (gptfdisk), so `backup-system.sh` 
 raw GPT dumps only -- a restore onto a disk of the same size works with those, and the portable
 `<host>-gpt.bin` (the way onto a different disk) needs the package installed.
 
+## 14. The health report, and what it had to learn about the port (Phase 7)
+
+`scripts/check-system.sh` is the Phase 6 checker from `debian-aarch64` ported to Arch and re-derived
+from this port's own decisions, so the checks describe the machine this repository actually builds.
+The measurements behind them, all from the built rootfs or from the checkout:
+
+- **The session is not the sibling's.** SDDM with `DisplayServer=wayland`, theme `omarchy`, and
+  `CompositorCommand=start-hyprland -- --config /usr/share/sddm/hyprland.lua`; the session entries are
+  `hyprland-uwsm.desktop` and `hyprland.desktop`; the shell is Quickshell and the lock is Omarchy's
+  own (`omarchy-system-sleep-monitor`, the user unit `omarchy-sleep-lock.service`). There is no
+  swaybar, no waybar, no mako, no hyprlock and no greetd to look for — the sibling's checks for those
+  tools would have been red on a working system.
+- **Two accounts, one of them on purpose.** The build makes `omarchy` (uid 1001) and provisions its
+  config; ALARM's `alarm` (uid 1000) stays with a password (plan §3, decision 8). The report names
+  every account that has one instead of assuming a single desktop user, which is the plan's own
+  audit requirement against the device rather than against the checklist.
+- **The platform answer has two sources.** `omarchy-hw-platform` reads `google,<board>` from the
+  device tree on a booted machine and `/var/lib/omarchy/image/target` while an image is still
+  un-booted; the first boot retires that manifest to `target.booted` and works through
+  `deferred-steps`, `pacman-keyring`, `initramfs-inputs` and `boot-rebuild`. Each is a check, because
+  a first boot that half-finished leaves no other trace.
+- **Fonts, from Omarchy's own configuration.** It asks for `JetBrainsMono Nerd Font` (15 mentions
+  across the Hyprland config and the shell), `Noto Color Emoji` and the CJK Noto families; the
+  `woff2-font-awesome` package in the image is for web apps, not for the bar.
+- **Audio is the MT6359 + RT1015P + RT5682 combination**, whose UCM files are
+  `/usr/share/alsa/ucm2/MediaTek/mt8192/mt6359-rt1015p-rt5682/`, and the desktop is driven through
+  `pactl` (volume, sink switching, tuning) as well as `wpctl`.
+- **The kernel's name is `-mt81`** (`CONFIG_LOCALVERSION`), so the package version (`7.2.7-1`) and
+  `uname -r` (`7.2.7-mt81`) only agree in their numeric part: the report compares that part and the
+  flavour separately, or a stale `/boot` would pass for an up-to-date kernel partition.
+- **The FIT carries the root UUID it was built for.** `futility show` on a kpart ends with
+  `Config: kern_guid=%U quiet loglevel=2 root=UUID=<the root it was built against>`, and this host's
+  build work tree still holds one built against a rehearsal fixture (`db0ed901-…`). The report reads
+  the FIT out of the partition `/proc/cmdline`'s `kern_guid` names and fails when its `root=UUID=`
+  is not the running root's — the one check that catches a prebuilt kpart written onto a disk that
+  was partitioned to different UUIDs.
+
+**Fixed while porting it: `pipewire-pulse` was missing.** The image had `libpulse` (so `pactl`
+exists) but no PulseAudio-protocol server, because upstream keeps `pipewire-pulse`,
+`pipewire-jack`, `gst-plugin-pipewire` and `lsp-plugins-lv2` in `install/omarchy-other.packages` --
+the ISO builder's list, which this port deliberately does not install (§8). `pactl` is not optional
+for the desktop, though: `omarchy-audio-output-volume`, `-output-switch`, `-output-set-default`,
+`omarchy-audio-sink-availability` and `omarchy-audio-tuning` all drive it, and the
+`omarchy-capture-*` commands ask it for the monitor source, so without the server the volume keys,
+the audio OSD and recording with sound fail on a PipeWire stack that otherwise looks complete. It is
+now in `packages/omarchy.list`; the other three stay out on purpose (`pipewire-jack` and
+`lsp-plugins-lv2` are for speaker tunings this device has none of, and `gst-plugin-pipewire` for
+audio in GStreamer apps, neither of which is a boot-blocking gap).
+
+**The rehearsal porting it needed.** Running the report inside the built rootfs (repository bind-mounted
+read-only at `/mnt/repo`, `/dev`, `/proc` and `/sys` bound so redirects and `dmesg`-less reads work)
+caught three things a straight port would have carried over wrong: `pacman -Qq linux-omarchy` answers
+with `linux-omarchy-book`, because pacman matches `-Q` targets as patterns, so the kernel-absence
+check and the declared-package check now compare exact names against the local package list;
+`/etc/os-release` is Omarchy's own, not ALARM's (`ID=omarchy`, `ID_LIKE=arch`), so the architecture
+has to be read from `ID_LIKE`; and `systemctl is-active sddm` answers *active* inside a chroot whose
+`/proc` is the host's even with no `/run/systemd` — the host runs sddm too — so every unit check has
+to sit inside the live gate. With those fixed the chroot run is 39 ok, 6 warn, 0 FAIL, 13 skip, and
+the three warnings worth reading are the un-retired image manifest (`target`, `deferred-steps`,
+`pacman-keyring`), which is exactly what an un-booted image should report, plus the password audit.
+The declared-package check passing is the one that validates the composition and the aarch64 filter
+against the real rootfs.
+
+**What the report cannot check off hardware.** Everything live: dmesg, `/sys`, `/proc/cmdline`,
+`/proc/asound`, the session and PipeWire. `check-system.sh` now says so instead of reading the wrong
+machine -- it detects a chroot the way the boot chain does (`boot/lib-cgpt.sh`) and stands its live
+sections down. That is also why this host cannot test them: the shell this repository is developed
+from runs under a namespace whose PID 1 is `init` and where `/run/systemd/system` does not exist, so
+its readings are the sandbox's, and the script skips them exactly as it would in a chroot. The live
+half is exercised for the first time by the first booted card, which is Phase 7's acceptance.
+
 ## Still open (need a chroot or hardware — not answerable read-only)
 
 

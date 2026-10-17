@@ -14,8 +14,9 @@ distribution: Arch Linux ARM + Omarchy instead of Debian plus a hand-written swa
   installs from it, and `scripts/` writes a card (`write-sd.sh`), an image and a release
   (`make-image.sh`, `make-release.sh`, with the bundle published as a repository), installs it to the
   eMMC (`install-emmc.sh`) and backs a machine up and restores it (`backup-system.sh`,
-  `restore-system.sh`) — all rehearsed on loop devices. Phase 7 (hardware validation) is next;
-  nothing has booted on hardware yet, so `reports/` is empty.
+  `restore-system.sh`) — all rehearsed on loop devices. Phase 7 (hardware validation) is next: its
+  report tool (`scripts/check-system.sh`) is written and every check is mapped to a measurement in
+  `docs/recon.md` §14; nothing has booted on hardware yet, so `reports/` is empty.
 - **Plan:** [`docs/plan.md`](docs/plan.md), each phase ticked with what verified it
 - **Evidence:** [`docs/recon.md`](docs/recon.md), the measurements behind every decision
 - **Agent/build instructions:** [`AGENTS.md`](AGENTS.md)

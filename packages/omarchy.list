@@ -14,3 +14,13 @@ omarchy-keyring
 omarchy-dev
 omarchy-settings-dev
 omarchy-nvim
+
+# The PulseAudio protocol server, and the one package this port installs that
+# upstream keeps in install/omarchy-other.packages -- the ISO builder's own list,
+# which this port does not install (docs/recon.md §8, §14). Omarchy's own tooling needs
+# it: omarchy-audio-output-{volume,switch,set-default}, omarchy-audio-sink-availability
+# and omarchy-audio-tuning drive the desktop through `pactl`, and the
+# screen-recording commands ask it for the monitor source, so without the server
+# the volume keys, the audio OSD and recording with sound all fail on a
+# PipeWire stack that otherwise looks complete. `wpctl` alone is not enough.
+pipewire-pulse
