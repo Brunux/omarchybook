@@ -6,10 +6,15 @@ Phases 0–6 of `docs/plan.md` are done as far as an off-device build can take t
 has `devices/`, `kernels/`, `boot/`, `platform/`, `scripts/`, `packages/`, `upstream/` and `keys/`,
 the kernel and both platform packages publish into a signed `[platform]` bundle outside the repo, a
 rootfs builds and installs from it, and Phase 6's tooling writes a card or an image from that rootfs
-and backs a machine up and restores it. Phase 7 (hardware validation) is next: its report tool
+and backs a machine up and restores it. Phase 7 (hardware validation) is in progress: its report tool
 `scripts/check-system.sh` is written (every check mapped to a measurement in `docs/recon.md` §14;
 it stands its live sections down in a chroot or a sandbox instead of describing the wrong machine),
-but nothing has booted on hardware yet, so `reports/` is empty.
+and three cards have booted on the Hayato and left their report and diagnostics in `reports/`. What
+each round finds is mapped to a cause in recon §14 and fixed in the image, never on the card: the
+first two rounds found real bugs (SDDM's missing owner state, netfilter matches the kernel was not
+building, the `[platform]` keyring, and a home that was never seeded from `/etc/skel`), the third
+found three in the report itself, and a kept report with no FAIL is what Phase 7's acceptance still
+waits for.
 
 Two Phase 6 decisions are easy to undo by accident: a release also publishes the bundle as a
 repository (`platform/`) and an image takes it only when `PLATFORM_REPO_URL` is set, and a package
