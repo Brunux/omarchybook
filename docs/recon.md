@@ -179,7 +179,9 @@ and missing fails the build. It is invoked as `filter_aarch64_packages <kernel> 
   `usr/lib/python3.14/site-packages/depthcharge_tools/` — **no `/etc/kernel/postinst.d`,
   `/etc/initramfs/post-update.d` or libalpm hooks**, so nothing to disable on Arch. (The AUR
   PKGBUILD also forgets `python-setuptools` as a makedepend; the build fails without it, and the
-  vendored copy adds it.) **The recipe is vendored** in `upstream/depthcharge-tools/` (AUR commit
+  vendored copy adds it — as a makedepend only. The recipe needed three more fixes to run at all on
+  python 3.14; they are in the vendored copy and explained in §12.) **The recipe is vendored** in
+  `upstream/depthcharge-tools/` (AUR commit
   `9f20e678ed63f4b9f20e82ace555577c0c88c7b5`, PKGBUILD SHA-256 recorded in its `PROVENANCE.md`) and
   built by `scripts/build-package.sh`, the generic builder every recipe goes through: a clean
   `$BUILD_ROOT` reproduces the bundle now (see §10).
@@ -452,6 +454,125 @@ to `video` and writes its markers into `/var/lib/omarchy-google/`; a second run 
 a Chrome OS image has no better marker; on an image built from ALARM's tarball that is both the
 provisioned user and ALARM's own `alarm` account — which is why that account is now a hygiene item
 in plan Phase 6.
+
+## 12. The boot chain, ported and shipped (Phase 5)
+
+**What ships, and where the files live.** `platform/omarchy-google-boot/` carries the two operations
+the dispatcher requires of this platform (`setup-boot`, `update-verify`), the command they share
+(`/usr/bin/omarchy-google-boot`, with a third subcommand `kpart-rewrite` for the ALPM hook), the
+ALPM hook itself, and the boot chain: `lib-cgpt.sh`, `make-kpart.sh` and `install-kpart.sh` under
+`/usr/lib/omarchy/google-boot/`, with the devkeys and the `deviceinfo`/`kernel-cmdline.conf` the
+device-side configuration derives from. None of those is a copy kept in the package: the recipe
+lists them in `extra.list`, and `scripts/build-package.sh` stages the paths it names under
+`recipe/extra/`, counting them towards the recipe's hash — so editing `boot/` or the device files
+rebuilds the package, and there is exactly one copy of each script in the tree.
+
+The ported scripts source a lib *beside themselves*. In this repository that is `boot/lib.sh`, a
+three-line wrapper around `scripts/lib.sh` (which knows about checkouts, build trees and rootfs
+directories); on the device it is the package's own `lib.sh`, which derives the same facts from the
+shipped `deviceinfo` and from `uname -r`. The package's tests run both and compare the values, which
+is the anti-drift check; inside a build chroot, where the repository is not visible, the hash over
+`extra.list` is what keeps them in step.
+
+**The chroot guard never fired, and the Debian original has the same bug.** Every script in the chain
+resolves the kernel partition from `kern_guid` in `/proc/cmdline`, and inside a chroot that file
+describes the *host* — so a chroot could rewrite the host's kernel partition. The ported guard tried
+to catch that with
+
+```sh
+[ "$(stat -c %d:%i /)" = "$(stat -c %d:%i /proc/1/root)" ]
+```
+
+which cannot work: `stat` does not dereference the last component, so `/proc/1/root` reports the
+*procfs symlink* (device `0:28`) and never equals `/`. Measured in the built rootfs, the guard's two
+sides are `45827:1227503` and `28:685210`; with `-L` they are `45827:1227503` and `45827:2`, which is
+the answer the check was written for. Note what "the answer" is: *equal* means this root is PID 1's
+root, i.e. a real system, so the guard has to refuse when they **differ** — the ported code refused
+when they were equal, i.e. always on a real system had `-L` been there.
+
+The fix lives in one place, `lib-cgpt.sh`: `in_chroot()` answers the question and
+`require_real_root()` refuses, and `install-kpart.sh` and the lifecycle command call it. Tried both
+ways: on the build host `in_chroot` is false and `require_real_root` returns; inside the built rootfs
+`in_chroot` is true and it dies with `ERROR: running in a chroot: /proc/cmdline describes the host,
+not this system`.
+
+**The hook must not be able to break a transaction.** `kpart-rewrite` is the one caller that *skips*
+rather than refuses: it fires inside pacman transactions, and the image build is one of them, so a
+failure would abort the build. It reports `WARN: not rewriting the kernel partition: running in a
+chroot, not the booted system` and exits 0. Verified end to end by reinstalling the kernel package
+inside the built rootfs: pacman ran mkinitcpio's hook, then ours (5/5 — the numbering is what puts
+it after), the guard skipped the write, and pacman exited 0. `setup-boot` and `update-verify` are
+the opposite: they only make sense on a booted system, so both refuse in a chroot rather than
+report about the host.
+
+**The command's own platform check reported a verdict it had not made.** `omarchy-google-boot`
+refuses to act on a machine that is not `aarch64-google`. The first version called
+`omarchy-hw-aarch64-google` bare and treated *any* failure as "not Google", so a build log said `not
+an aarch64-google machine` about an aarch64-google image, with two unrelated causes it could not tell
+apart: a hook has no `PATH` worth trusting (detectors are called by absolute path — they resolve their
+own siblings and refuse an unprivileged Bash startup, and `bin/omarchy-lifecycle-dispatch` calls them
+exactly that way), and an image build installs this package *before* the runtime that ships the
+detectors. The command now resolves the detector beside itself, calls it with the dispatcher's fixed
+`PATH` when root, and separates the answers: `kpart-rewrite` checks the chroot first — so a build never
+asks the detector at all and reports the skip — and only then warns "not an aarch64-google machine, or
+its detector is not installed yet" if the check genuinely cannot be made, while `setup-boot` and
+`update-verify`, which the dispatcher only calls on a booted system, refuse outright. The package's
+tests assert all three parts.
+
+**The image manifest now goes in before the package lists.** `omarchy-hw-platform` answers from
+`/var/lib/omarchy/image/target` inside a chroot and *deliberately* never reads the build host's device
+tree — an image is built away from the machine it will run on — and `build-rootfs.sh` was writing that
+file *after* the lists, i.e. after everything that could have asked. It is pinned before them now,
+which is where the comment above it always said it belonged ("so package setup describes the target
+rather than the builder"). No package changes: the file is the builder's, not a package's.
+
+**Two `[Trigger]` sections, not one with two `Type` lines.** A first version used one section with
+`Type = Package` and `Type = Path`; pacman warned `overwriting previous definition of Type` at
+install time, because its INI parser keeps the last value of a repeated key — the hook would have
+silently dropped the package condition. `apply`-style hooks in the image (mkinitcpio's own
+`90-mkinitcpio-install.hook`) express several conditions as several `[Trigger]` sections, which is
+what the shipped hook does now. The package's tests count `Type` lines per section, so the warning
+cannot come back unnoticed.
+
+**`depthcharge-tools` does not run on python 3.14, and the AUR recipe declares neither that nor the
+programs it shells out to.** Found by running the boot chain the device will run — inside a *built*
+rootfs, not the build chroot — and it took three fixes (all recorded in the recipe's
+`PROVENANCE.md`):
+
+1. `depthcharge_tools/utils/argparse.py` builds positionals with `nargs=0`, which 3.14's argparse
+   rejects (`ValueError: nargs for positionals must be != 0`). The parser is class-level and built at
+   import time, so even `depthchargectl --version` died.
+2. `depthcharge_tools/__init__.py` imported `pkg_resources`. The first attempt was to add
+   `python-setuptools` as a runtime dependency, which is the reflex and is *wrong*: setuptools
+   **84.0.0** (ALARM's, and the version in the image) ships no `pkg_resources` at all, so the dep
+   changed nothing and only dragged in the `python-jaraco*` chain.
+3. With both fixed, the build dies on missing *programs* — first `[Errno 2] No such file or directory:
+   'fdtget'`, then, once `dtc` is declared, the same on `mkimage`. `depends=('python')` names none of
+   the programs upstream's README lists as dependencies: `fdtget`/`fdtput` (`dtc`),
+   `futility`/`vbutil_kernel`/`cgpt` (`vboot-utils`), `mkimage` (`uboot-tools`). The compression tools
+   are already in the image and `lzma` (xz) is the one this board's FIT uses; `crossystem` is not
+   packaged on Arch at all and is only for its own subcommands.
+
+The release is from 2021, and upstream master (`1c123c8`) already carries fixes 1 and 2 as ordinary
+commits. They are cherry-picked rather than built from master, because the boot chain in
+`debian-aarch64` — the one verified on this hardware — was built with 0.6.2's semantics, and the ~40
+commits since change FIT construction (`Remove default configuration from FIT image`, verity, TPM).
+`depends` now names `python-packaging`, `dtc`, `vboot-utils` and `uboot-tools`; `python-setuptools`
+stays a makedepend. `pkgrel` stays `1`, as everywhere in `[platform]`: the bundle is content-addressed
+and `build-rootfs.sh` refreshes the cache from it.
+
+**Verified end to end inside a rebuilt rootfs.** After `scripts/build-rootfs.sh` — which now pulls
+`dtc`, `uboot-tools`, `python-packaging` and `vboot-utils` in through the recipe's dependencies, with
+no manual step — the *device's* copy of the chain builds a FIT from the image it is installed in:
+`/usr/lib/omarchy/google-boot/make-kpart.sh / /tmp/kpart.img "root=UUID=… rootwait rw"` exits 0 and
+writes 30 MiB, `futility show` reports `Header version: 2.2`, `Body verification succeeded` and the
+flags `!DEV DEV !REC`, and `mt8192-asurada-hayato-r1.dtb` is the first DTB in the image. That is
+phase 1's acceptance re-run through the files the package ships, on the python the device runs,
+instead of on the build host.
+
+**What only a boot can settle.** Everything above is verified in a chroot. Writing p1, the hook on a
+real kernel update, `setup-boot` on the first boot of a freshly written card, and the Unicode/keyd
+side of the platform layer all need the machine — i.e. Phase 7.
 
 ## Still open (need a chroot or hardware — not answerable read-only)
 

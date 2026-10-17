@@ -4,9 +4,21 @@
 # the device needs that no configured repository carries. `depthchargectl` is
 # what builds and writes the signed FIT kernel partition. See PROVENANCE.md.
 #
-# Deviation from the AUR original: `python-setuptools` is a makedepend.
-# `python setup.py install` fails in a clean ALARM chroot without it, because
-# `python` alone does not pull setuptools in (docs/recon.md §7).
+# Deviation from the AUR original:
+#
+#  * `python-setuptools` is a makedepend. `python setup.py install` fails in a
+#    clean ALARM chroot without it (docs/recon.md §7).
+#  * `0001-argparse-nargs-zero.patch` and `0002-drop-pkg_resources.patch`
+#    cherry-pick upstream's Python 3.13/3.14 compatibility fixes onto the 2021
+#    release, which otherwise cannot even run `depthchargectl --version` on
+#    ALARM's python 3.14 (docs/recon.md §12). They bring `python-packaging` in.
+#  * `dtc`, `vboot-utils` and `uboot-tools` are dependencies of the *programs* it
+#    runs: `depthchargectl build` shells out to `fdtget`/`fdtput` (dtc),
+#    `futility`/`vbutil_kernel`/`cgpt` (vboot-utils) and `mkimage`
+#    (uboot-tools). The AUR declares only python, so a build there dies on the
+#    first missing tool -- first `fdtget`, then `mkimage` (recon §12). The
+#    compression tools upstream's README lists are already installed, and `lzma`
+#    (xz) is the one this board's FIT needs.
 pkgname=depthcharge-tools
 pkgver=0.6.2
 pkgrel=1
@@ -14,12 +26,31 @@ pkgdesc="Tools to manage the Chrome OS bootloader"
 arch=('any')
 url="https://github.com/alpernebbi/depthcharge-tools"
 license=('GPL-2.0-or-later')
-depends=('python')
+depends=('python' 'python-packaging' 'dtc' 'vboot-utils' 'uboot-tools')
 makedepends=('python-setuptools')
 
-source=("https://github.com/alpernebbi/depthcharge-tools/archive/refs/tags/v${pkgver}.tar.gz")
+source=("https://github.com/alpernebbi/depthcharge-tools/archive/refs/tags/v${pkgver}.tar.gz"
+        "0001-argparse-nargs-zero.patch"
+        "0002-drop-pkg_resources.patch")
 
-sha256sums=('cba9f6d38aab1a00c98b180d9d762c935bd971f47d7b13eae030cd4c7d163cf0')
+sha256sums=('cba9f6d38aab1a00c98b180d9d762c935bd971f47d7b13eae030cd4c7d163cf0'
+            '24b49f5a88054441029ea94f7f8f512e10f450d3440e47a299bfb03369d8a6a0'
+            'd07aabb3c87576503b54b19c415acba4b55db8de94ef66643e09393837737ed7')
+
+prepare() {
+  cd "depthcharge-tools-${pkgver}"
+
+  # The work tree survives an interrupted build (scripts/build-package.sh), so
+  # skip a patch that is already applied: applying it twice fails and would leave
+  # rejects behind.
+  for p in 0001-argparse-nargs-zero.patch 0002-drop-pkg_resources.patch; do
+    if patch -p1 -R --dry-run --force --batch < "$srcdir/$p" >/dev/null 2>&1; then
+      echo "$p (already applied)"
+    else
+      patch -Np1 --no-backup-if-mismatch < "$srcdir/$p"
+    fi
+  done
+}
 
 build() {
   cd "${srcdir}/depthcharge-tools-${pkgver}"

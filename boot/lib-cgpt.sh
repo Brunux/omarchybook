@@ -15,8 +15,32 @@
 # /boot is kept separate exactly as Nura has it, so the two installations on
 # this machine look the same and the eMMC is a faithful copy of the tested card.
 #
-# Ported from debian-aarch64 (docs/plan.md §2.5). The logic is unchanged; only
-# the package that provides futility differs (Arch: `vboot-utils`).
+# Ported from debian-aarch64 (docs/plan.md §2.5). The logic is unchanged except
+# require_real_root() below; only the package that provides futility differs
+# (Arch: `vboot-utils`).
+
+# True inside a chroot, where /proc/cmdline -- and so the kern_guid every script
+# here resolves the kernel partition from -- describes the *host*: the root of
+# PID 1 is not this root. `stat -L` is what makes the comparison mean anything:
+# without it, stat reports the procfs symlink itself (device 0:28), which can
+# never equal the device:inode of /, so a guard written that way passes silently
+# -- the bug the Debian original has (docs/recon.md §12). Both sides must be
+# known before answering, so a system where /proc hides PID 1 is not mistaken
+# for a chroot.
+in_chroot() {
+	_root="$(stat -Lc '%d:%i' / 2>/dev/null || true)"
+	_pid1_root="$(stat -Lc '%d:%i' /proc/1/root 2>/dev/null || true)"
+	[ -n "$_root" ] && [ -n "$_pid1_root" ] && [ "$_root" != "$_pid1_root" ]
+}
+
+# Refuse to run from a chroot. Everything in the boot chain writes the partition
+# `kern_guid` names, so from a chroot it would rewrite the host's kernel
+# partition. boot-deploy guards this too.
+require_real_root() {
+	if in_chroot; then
+		die "running in a chroot: /proc/cmdline describes the host, not this system"
+	fi
+}
 
 # Release a disk and its partitions: drop mounts and swap, then stale signatures
 # (cgpt trips over leftover GPT headers otherwise). Both naming schemes are

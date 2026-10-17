@@ -1,0 +1,90 @@
+# depthcharge-tools: drop pkg_resources, which setuptools no longer ships.
+#
+# Part of the same upstream compatibility fix as 0001; kept separate because it
+# is a different file and a different failure. Upstream replaced pkg_resources
+# with importlib.metadata/importlib.resources and packaging.version, so the
+# recipe now depends on python-packaging.
+#
+# Upstream commit: 1c123c8, retrieved 2026-10-17. See docs/recon.md §12.
+--- a/depthcharge_tools/__init__.py
++++ b/depthcharge_tools/__init__.py
+@@ -6,9 +6,11 @@
+ # See COPYRIGHT and LICENSE files for full copyright information.
+ 
+ import glob
++import importlib.metadata
++import importlib.resources
+ import logging
++import packaging.version
+ import pathlib
+-import pkg_resources
+ import re
+ import subprocess
+ 
+@@ -18,22 +20,24 @@
+ 
+ def get_version():
+     version = None
+-    pkg_path = pkg_resources.resource_filename(__name__, '')
+-    pkg_path = pathlib.Path(pkg_path).resolve()
++    pkg_path = importlib.resources.files(__name__)
+ 
+     try:
+-        self = pkg_resources.require(__name__)[0]
+-        version = self.version
++        version = importlib.metadata.version(__name__)
+ 
+-    except pkg_resources.DistributionNotFound:
+-        setup_py = pkg_path.parent / "setup.py"
+-        if setup_py.exists():
+-            version = re.findall(
+-                'version=(\'.+\'|".+"),',
+-                setup_py.read_text(),
+-            )[0].strip('"\'')
++    except importlib.metadata.PackageNotFoundError:
++        if isinstance(pkg_path, pathlib.Path):
++            setup_py = pkg_path.parent / "setup.py"
++            if setup_py.exists():
++                version = re.findall(
++                    'version=(\'.+\'|".+"),',
++                    setup_py.read_text(),
++                )[0].strip('"\'')
+ 
+-    if (pkg_path.parent / ".git").exists():
++    if (
++        isinstance(pkg_path, pathlib.Path)
++        and (pkg_path.parent / ".git").exists()
++    ):
+         proc = subprocess.run(
+             ["git", "-C", pkg_path, "describe"],
+             stdout=subprocess.PIPE,
+@@ -44,20 +48,21 @@
+             tag, *local = proc.stdout.split("-")
+ 
+             if local:
+-                version = "{}+{}".format(tag, ".".join(local))
++                git_version = "{}+{}".format(tag, ".".join(local))
+             else:
+-                version = tag
++                git_version = tag
++            try:
++                return packaging.version.Version(git_version)
++            except packaging.version.InvalidVersion:
++                pass
+ 
+     if version is not None:
+-        return pkg_resources.parse_version(version)
++        return packaging.version.Version(version)
+ 
+ __version__ = get_version()
+ 
+-config_ini = pkg_resources.resource_string(__name__, "config.ini")
+-config_ini = config_ini.decode("utf-8")
+-
+-boards_ini = pkg_resources.resource_string(__name__, "boards.ini")
+-boards_ini = boards_ini.decode("utf-8")
++config_ini = importlib.resources.read_text(__name__, "config.ini")
++boards_ini = importlib.resources.read_text(__name__, "boards.ini")
+ 
+ config_files = [
+     *glob.glob("/etc/depthcharge-tools/config"),

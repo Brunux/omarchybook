@@ -8,10 +8,13 @@ It reuses the boot chain, kernel and device knowledge already proven in
 [`debian-aarch64`](../debian-aarch64) (v0.1.0, verified on hardware) and replaces only the
 distribution: Arch Linux ARM + Omarchy instead of Debian plus a hand-written sway UI.
 
-- **Status:** planning / recon. This repository currently contains only
-  [`docs/plan.md`](docs/plan.md); implementation starts at the first commits in plan §9 and
-  Phase 0. Nothing here is built or bootable yet.
-- **Plan:** [`docs/plan.md`](docs/plan.md)
+- **Status:** phases 0–5 of the plan are done as far as an off-device build can take them. The
+  kernel (`linux-omarchy-book`) and both platform packages (`omarchy-google`, `omarchy-google-boot`)
+  build and publish into a signed `[platform]` bundle outside the repository, and a rootfs builds
+  and installs from it. Phase 6 (image, release, install, backup) is next; nothing has booted on
+  hardware yet, so `reports/` is empty.
+- **Plan:** [`docs/plan.md`](docs/plan.md), each phase ticked with what verified it
+- **Evidence:** [`docs/recon.md`](docs/recon.md), the measurements behind every decision
 - **Agent/build instructions:** [`AGENTS.md`](AGENTS.md)
 
 > **How this project is developed:** by an AI agent running on [OpenCode](https://opencode.ai)

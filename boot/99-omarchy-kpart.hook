@@ -1,0 +1,40 @@
+# ALPM hook: after the kernel (or its DTBs) changes, rewrite the Chrome OS
+# kernel partition this system boots from.
+#
+# This is the Arch counterpart of the Debian sequence install-kernel.sh then
+# install-kpart.sh (the reference project's dpkg trigger): installing the new
+# kernel into /boot and /lib/modules is not enough, because the firmware loads
+# the kernel from p1. The partition is resolved from kern_guid in /proc/cmdline,
+# so a card and the internal storage are each fixed in place.
+#
+# Shipped by omarchy-google-boot, which also ships the script it calls
+# (/usr/lib/omarchy/google-boot/install-kpart.sh with CONFIRM=yes). The kernel
+# package is held back by IgnorePkg in a shipped image, so this runs when an
+# administrator installs a kernel by hand -- and it is idempotent: it builds the
+# kpart from the running system and rewrites p1 with it.
+#
+# Two [Trigger] sections, not one with two Type lines: pacman's INI parser keeps
+# the last value of a repeated key, so a single section would silently trigger
+# on paths only (or on the package only). mkinitcpio's own hook is written the
+# same way.
+#
+# The number is deliberate: hooks run in filename order, so 99 lands after
+# mkinitcpio's 90-mkinitcpio-install.hook, which is what regenerates the
+# initramfs this script embeds.
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = linux-omarchy-book
+
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Path
+Target = boot/vmlinuz-*
+Target = boot/dtbs/*
+
+[Action]
+Description = Rewriting the Chrome OS kernel partition (p1) with the new kernel...
+When = PostTransaction
+Exec = /usr/bin/omarchy-google-boot kpart-rewrite

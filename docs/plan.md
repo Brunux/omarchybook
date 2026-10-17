@@ -113,12 +113,15 @@ partition whose PARTUUID equals `kern_guid` in the kernel command line. Therefor
 kernel lives *inside* p1, and a kernel update is not finished until p1 is rewritten.
 
 This is precisely the problem `debian-aarch64` already solved, and the solution is **script-level**,
-so it ports almost verbatim: `scripts/lib-cgpt.sh` (the single copy of the ChromeOS GPT layout),
-`scripts/make-kpart.sh` (`depthchargectl build --board mt8192` plus the vboot developer keys),
-`scripts/install-kpart.sh` (resolves `kern_guid` from `/proc/cmdline`, verifies that the FIT fits and
+so it ports almost verbatim: `boot/lib-cgpt.sh` (the single copy of the ChromeOS GPT layout),
+`boot/make-kpart.sh` (`depthchargectl build --board mt8192` plus the vboot developer keys),
+`boot/install-kpart.sh` (resolves `kern_guid` from `/proc/cmdline`, verifies that the FIT fits and
 is signed, backs up what it replaces), plus `write-sd.sh`, `install-emmc.sh`, `make-image.sh`,
-`make-release.sh`, `backup-system.sh` and `restore-system.sh`. All of it is POSIX sh, and Arch's
-`/bin/sh` is bash, so the port is about package names and paths, not logic.
+`make-release.sh`, `backup-system.sh` and `restore-system.sh`. The shell logic ports as it is (the
+Debian originals are POSIX sh; ours are bash, which is what Arch's `/bin/sh` is, and the ports lean
+on `pipefail`), so the work is package names and paths — with one genuine fix the Debian copies
+carried: `install-kpart.sh`'s chroot guard never fired, and would have let a chroot rewrite the
+*host's* kernel partition (recon §12).
 
 ### 2.4 The integration contract (and where it can bite)
 
@@ -220,27 +223,43 @@ omarchybook/
                               packages installed explicitly; the desktop set
                               itself is composed from the runtime's own lists),
                               aarch64-filter.list (x86-only drops and substitutions)
-  platform/omarchy-google/    the aarch64-google implementation, the role
-                              upstream gives omarchy-mac-pkgs: PKGBUILD, the
-                              setup-system entrypoint and script, the keyd map,
-                              the backlight udev rule, the journald drop-in and
-                              the /usr/share/omarchy-platform data. Built into
-                              [platform] like the kernel; omarchy-google-boot
-                              (the boot chain) joins it in Phase 5
+  platform/omarchy-google/    the aarch64-google runtime layer, the role upstream
+                              gives omarchy-mac-pkgs: PKGBUILD, the setup-system
+                              entrypoint and script, the keyd map, the backlight
+                              udev rule, the journald drop-in and the
+                              /usr/share/omarchy-platform data
+  platform/omarchy-google-boot/
+                              the boot-chain half: the setup-boot and
+                              update-verify entrypoints, the command they share,
+                              and — through extra.list — the boot/ scripts, the
+                              deviceinfo and the devkeys, plus the ALPM hook
+                              that rewrites p1. Both are built into [platform]
+                              like the kernel; extra.list is how a recipe stages
+                              files it does not own, so neither package keeps a
+                              second copy of them
   keys/                       omarchy.gpg, the [omarchy] signing key (its repo
                               ships no keyring Arch Linux ARM's trusts)
-  boot/                       lib-cgpt.sh, make-kpart.sh, the pacman hook that rewrites p1,
-                              depthcharge devkeys (the ALARM vboot-utils carries none);
-                              the canonical boot-chain copy, consumed by scripts/
+  boot/                       lib-cgpt.sh, make-kpart.sh, install-kpart.sh,
+                              lib.sh, 99-omarchy-kpart.hook, devkeys/ (the ALARM
+                              vboot-utils carries none); the canonical boot-chain
+                              copy, consumed by scripts/ and shipped to the
+                              device by platform/omarchy-google-boot. The
+                              scripts source a lib beside themselves, so the same
+                              files work in a checkout and on an installed
+                              system, where the package replaces lib.sh with its
+                              own device-side one
   upstream/omarchy/           patches/series plus 0001-aarch64-google.patch (the proposal)
   upstream/omarchy-pkgs/      the *-dev recipes the runtime and settings are
                               built from (pinned to the same quattro commit)
   upstream/depthcharge-tools/ the AUR recipe for depthchargectl, the one package
                               the device needs that no repository carries
-  scripts/                    build-package.sh, build-kernel.sh, build-omarchy.sh,
+  scripts/                    build-package.sh (recipes, ours and vendored; an
+                              extra.list file lets a recipe stage files that live
+                              outside it, counting towards its hash),
+                              build-kernel.sh, build-omarchy.sh,
                               build-rootfs.sh, install-kernel.sh,
                               write-sd.sh, make-image.sh, make-release.sh,
-                              install-emmc.sh, install-kpart.sh, backup-system.sh,
+                              install-emmc.sh, backup-system.sh,
                               restore-system.sh, check-system.sh,
                               lib.sh, lib-dist.sh, 00-deps.sh
   docs/                       plan.md, recon.md, upstream.md, releases/<version>.md
@@ -328,11 +347,17 @@ waits on hardware.*
       `xhci_pci_renesas` and two benign aarch64 ones: `ERROR: failed to detect root filesystem`
       (the `autodetect` hook finds no `root=` in a chroot — the kpart supplies it at boot) and the
       `microcode` hook skipping the architecture — none the `mali_csffw.bin` one.*
-- [ ] ALPM hook: after a kernel or initramfs change, rebuild and write the kpart — the Arch
+- [x] ALPM hook: after a kernel or initramfs change, rebuild and write the kpart — the Arch
       counterpart of the Debian sequence `install-kernel.sh` then `install-kpart.sh` — backing up
-      what it replaces. *Waits on its second half: Phase 5's `install-kpart.sh` (resolve `kern_guid`
-      from `/proc/cmdline`, check the FIT fits the partition and is signed, back up what it
-      replaces). The hook itself is a `boot/` file that calls it, so it lands with that half.*
+      what it replaces. *`boot/99-omarchy-kpart.hook`, shipped by `omarchy-google-boot`, fires on
+      the kernel package or on `boot/vmlinuz-*`/`boot/dtbs/*` and runs `omarchy-google-boot
+      kpart-rewrite`, which is Phase 5's `install-kpart.sh` with `CONFIRM=yes`. Two `[Trigger]`
+      sections because pacman keeps the last value of a repeated key, and numbered 99 so it lands
+      after mkinitcpio's `90-mkinitcpio-install.hook` — the FIT then embeds the regenerated
+      initramfs. It cannot break a transaction: in a chroot it reports and exits 0 (the write is
+      meaningless there and `/proc/cmdline` is the host's), on a booted system it rewrites p1.
+      Exercised end to end in a rootfs by reinstalling the kernel package: pacman ran the hook and
+      the guard skipped it (recon §12). What the hook does on a real boot is Phase 7's.*
 - [x] Package signing and publication into the local `[platform]` repo via `repo-add`. *`lib.sh`
       keeps a build/release signing key outside the repository (`$BUILD_ROOT/keys`, created on first
       use), `sign_platform_packages` writes a detached signature beside each package, and
@@ -350,8 +375,9 @@ from the built rootfs (30M, lzma, the vendored devkeys) with `futility show` rep
 `Body verification succeeded` (recon §10). Re-verified after the rebuild that added `-headers` back:
 the kpart built from that rootfs is 30.2M with `mt8192-asurada-hayato-r1.dtb` first and
 `kern_guid=%U quiet loglevel=2 root=UUID=… rootwait rw`, and pacman installs the signed bundle with
-`SigLevel = Required DatabaseOptional` (no `TrustAll`). What is still missing is only the automatic
-trigger — the ALPM hook above, which lands with Phase 5's device-side half.*
+`SigLevel = Required DatabaseOptional` (no `TrustAll`). The automatic trigger now exists too (the
+ALPM hook above) and was exercised in a chroot; what remains is a boot on hardware, where the hook's
+write path runs for real (Phase 7).*
 
 ### Phase 2 — Rootfs bootstrap
 
@@ -464,18 +490,41 @@ markers under `/var/lib/omarchy-google/`, and a second run changes nothing.*
 
 ### Phase 5 — Boot chain
 
-- [ ] Port `boot/lib-cgpt.sh`: `parted -s <dev> mktable gpt` first, then `cgpt create` and
+- [x] Port `boot/lib-cgpt.sh`: `parted -s <dev> mktable gpt` first, then `cgpt create` and
       `cgpt add` with the pmbootstrap flags (`-S 1 -T 5 -P 10`), labels for kernel/boot/root,
-      128 MiB p1 plus 512 MiB p2 ext4 plus p3 ext4.
-- [ ] Port `boot/make-kpart.sh`: `depthchargectl build --board mt8192`, the vboot developer keys,
+      128 MiB p1 plus 512 MiB p2 ext4 plus p3 ext4. *Ported, and no longer dead code: it is live on
+      the device through `install-kpart.sh`, which sources it for `kpart_fits`, `kpart_verify` and
+      the chroot guard. Its disk-writing callers are Phase 6's `write-sd.sh`/`install-emmc.sh`. The
+      geometry comes from `deviceinfo` (kpart start/size, boot size, filesystem), so nothing is
+      duplicated.*
+- [x] Port `boot/make-kpart.sh`: `depthchargectl build --board mt8192`, the vboot developer keys,
       hayato's DTB first, no duplicated `kern_guid`, a silent-by-default command line with a
-      `KERNEL_CMDLINE_OVERRIDE` escape hatch for verbose boots.
-- [ ] Kernel command line from `devices/google-asurada/kernel-cmdline.conf` plus `root=UUID=…`
-      resolved from the built rootfs, the way `debian-aarch64` resolves it.
-- [ ] An `install-kpart.sh` equivalent, with backup and `CONFIRM=yes`.
+      `KERNEL_CMDLINE_OVERRIDE` escape hatch for verbose boots. *Ported and verified from a built
+      rootfs: 30.2M, lzma, `mt8192-asurada-hayato-r1.dtb` first, the vendored devkeys passed
+      explicitly, and `futility show` reporting `Body verification succeeded`. The device runs the
+      same file: on the device it sources the packaged device-side lib instead of the build host's
+      (`boot/lib.sh` here is a wrapper around `scripts/lib.sh`), which is what the package's tests
+      compare (recon §12).*
+- [x] Kernel command line from `devices/google-asurada/kernel-cmdline.conf` plus `root=UUID=…`
+      resolved from the built rootfs, the way `debian-aarch64` resolves it. *Verified in the kpart
+      that was built: `kern_guid=%U quiet loglevel=2 root=UUID=… rootwait rw` — the file carries
+      `quiet`/`loglevel=2`, and the GUID and the root UUID are appended by the caller (on the
+      device `install-kpart.sh` reads the UUID with `findmnt`/`blkid`; for an image it comes from the
+      built rootfs). `KERNEL_CMDLINE_OVERRIDE` is the verbose escape hatch.*
+- [x] An `install-kpart.sh` equivalent, with backup and `CONFIRM=yes`. *`boot/install-kpart.sh`,
+      shipped in `omarchy-google-boot` and reachable as `omarchy-google-boot setup-boot` and
+      `kpart-rewrite`. It resolves p1 from `kern_guid`, refuses a partition that is not a ChromeOS
+      kernel partition, builds the FIT from the running system (`ROOTFS=/`,
+      `KERNEL_RELEASE=$(uname -r)`), checks that it fits and verifies, backs the old p1 up to
+      `/var/lib/omarchy-google-boot/` before writing, and re-reads the result with `futility show`.
+      Without `CONFIRM=yes` it prints the plan and stops. The write itself is Phase 7; off-device it
+      is refused by the chroot guard, which is verified (recon §12).*
 
 **Acceptance:** the card boots with Ctrl+U (`crossystem dev_boot_usb=1 dev_boot_signed_only=0`), and
-`futility show` on p1 reports a dev-signed FIT.
+`futility show` on p1 reports a dev-signed FIT. *Everything short of the boot is verified in a
+chroot: the dispatcher resolves the operations to the package's entrypoints, the FIT builds and
+verifies, the ALPM hook fires and skips safely, and the guard refuses a chroot. Booting the card is
+Phase 7's.*
 
 ### Phase 6 — Image, release, install, backup
 
@@ -600,7 +649,8 @@ Still open:
    `platform/omarchy-google/` (Phase 4): it is keyed to the `google` family, not to this board.
 4. `kernels/mediatek-mt81/` vendored with its `version`, `config.aarch64` and `patches/series`,
    with a provenance note pointing at `debian-aarch64`.
-5. `boot/lib-cgpt.sh` and `boot/make-kpart.sh` ported.
+5. `boot/lib-cgpt.sh`, `boot/make-kpart.sh` and `boot/install-kpart.sh` ported, with the
+   `boot/lib.sh` wrapper that lets the packaged copies find their configuration on a device.
 6. `upstream/omarchy/patches/0001-aarch64-google.patch` as a skeleton, plus `series`.
 
 Then Phase 0, whose answers may still change the patch skeleton before anything is built.

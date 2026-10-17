@@ -259,6 +259,21 @@ chroot "$ROOTFS" pacman -Rdd --noconfirm linux-aarch64 2>/dev/null || true
 log "Upgrading the bootstrap system"
 chroot "$ROOTFS" pacman -Syu --noconfirm
 
+# The image manifest goes in before anything is installed. The detector
+# (omarchy-hw-platform) answers from this file inside a chroot and deliberately
+# never reads the build host's device tree -- an image is built away from the
+# machine it will run on -- so whichever package setup runs during the lists
+# below must find the target named here rather than the builder. Note that the
+# boot package's ALPM hook still cannot check the platform when the device list
+# installs the kernel: its detector ships with the runtime, which comes later,
+# so it reports that it cannot tell and does nothing (docs/recon.md §12).
+log "Pinning platform=$OMARCHY_PLATFORM in the image manifest"
+mkdir -p "$ROOTFS/var/lib/omarchy/image"
+chmod 0755 "$ROOTFS/var/lib/omarchy/image"
+printf 'format=1\nplatform=%s\n' "$OMARCHY_PLATFORM" \
+	> "$ROOTFS/var/lib/omarchy/image/target"
+chmod 0644 "$ROOTFS/var/lib/omarchy/image/target"
+
 install_list "$PACKAGES_DIR/base.list"
 install_list "$DEVICE_DIR/packages.list"
 
@@ -318,16 +333,10 @@ EOS
 # Phase 3 -- the Omarchy layer
 # ---------------------------------------------------------------------------
 # The runtime, settings and editor, plus the desktop set composed from the
-# checkout's own lists. The image manifest goes in first: it makes the detector
-# answer aarch64-google inside the chroot, so package setup describes the target
-# rather than the builder, and it queues the hardware leaves to the machine's
-# first boot (docs/recon.md §2).
-log "Pinning platform=$OMARCHY_PLATFORM in the image manifest"
-mkdir -p "$ROOTFS/var/lib/omarchy/image"
-chmod 0755 "$ROOTFS/var/lib/omarchy/image"
-printf 'format=1\nplatform=%s\n' "$OMARCHY_PLATFORM" \
-	> "$ROOTFS/var/lib/omarchy/image/target"
-chmod 0644 "$ROOTFS/var/lib/omarchy/image/target"
+# checkout's own lists. The image manifest is already in place (written before
+# the package lists above): it makes the detector answer aarch64-google inside
+# the chroot, so package setup describes the target rather than the builder, and
+# it queues the hardware leaves to the machine's first boot (docs/recon.md §2).
 
 # The desktop set: omarchy-base.packages plus the aarch64 additions and the
 # platform's own, minus the packages the runtime marks x86_64-only. The same

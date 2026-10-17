@@ -1,0 +1,39 @@
+# depthcharge-tools: make the 2021 release run on the Python the device has.
+#
+# Cherry-picked from upstream, because v0.6.2 is the last release (2021) and
+# neither fix is in it. Only the compatibility fixes are taken, not the ~40
+# behaviour commits that follow them: the boot chain in debian-aarch64 (verified
+# on this hardware) was built with 0.6.2's semantics, and a FIT built differently
+# is not something to discover on the device.
+#
+# Upstream commit: 1c123c8 ("depthchargectl: build: Ignore child dt-compatibles
+# of wildcard pattern"), retrieved 2026-10-17.
+#
+# Two independent failures on Python 3.14 (ALARM's python is 3.14.8):
+#
+#  1. depthcharge_tools/utils/argparse.py builds positionals with nargs=0, which
+#     3.14's argparse rejects outright ("nargs for positionals must be != 0").
+#     Even `depthchargectl --version` died, because the parser is class-level and
+#     built at import time.
+#  2. depthcharge_tools/__init__.py imported pkg_resources, which setuptools no
+#     longer ships at all, so nothing ran without it.
+#
+# See docs/recon.md §12.
+--- a/depthcharge_tools/utils/argparse.py
++++ b/depthcharge_tools/utils/argparse.py
+@@ -436,6 +436,15 @@
+         option_strings = self._args
+         kwargs = self.__kwargs
+ 
++        # Work around argparse rejecting nargs=0 for positional args
++        if kwargs.get("nargs") == 0 and not option_strings:
++            arg = parent.add_argument(
++                *option_strings,
++                **kwargs | {"nargs": "?"},
++            )
++            arg.nargs = 0
++            return arg
++
+         return parent.add_argument(*option_strings, **kwargs)
+ 
+     def __property_from_kwargs(name):

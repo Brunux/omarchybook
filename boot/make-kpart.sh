@@ -14,7 +14,7 @@
 # belongs to mkdepthcharge) -- it takes the three --vboot-* files (docs/plan.md
 # §4).
 set -euo pipefail
-. "$(dirname "$0")/../scripts/lib.sh"
+. "$(dirname "$0")/lib.sh"
 
 [ -n "${1:-}" ] && ROOTFS="$1"
 OUT="${2:-$KPART}"

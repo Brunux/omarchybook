@@ -151,6 +151,27 @@ for recipe in "${recipes[@]}"; do
 	rm -rf "$build_dir/out"
 	mkdir -p "$build_dir/recipe" "$build_dir/out" "$build_dir/src"
 	cp -a "$recipe/." "$build_dir/recipe/"
+
+	# A recipe may need files that live outside it. The boot chain is canonical
+	# in the repository's boot/ (plan §4: the canonical copy, consumed by
+	# scripts/), but the package that ships it to the device is
+	# platform/omarchy-google-boot; `extra.list` names those paths, one
+	# repository-relative path per line, and they are staged under
+	# recipe/extra/ for the recipe's install step to pick up. They count towards
+	# the recipe's hash, so a change in boot/ rebuilds the package.
+	extra_paths=()
+	if [ -f "$recipe/extra.list" ]; then
+		while read -r path; do
+			path="${path%%#*}"
+			path="$(printf '%s' "$path" | tr -d '[:space:]')"
+			[ -n "$path" ] || continue
+			[ -e "$REPO_DIR/$path" ] || die "$name: extra.list names a missing path: $path"
+			extra_paths+=("$path")
+			mkdir -p "$build_dir/recipe/extra/$(dirname "$path")"
+			cp -a "$REPO_DIR/$path" "$build_dir/recipe/extra/$(dirname "$path")/"
+		done < "$recipe/extra.list"
+	fi
+
 	in_chroot chown -R builder:builder "/pkg-build/$name"
 
 	# The recipe's own metadata comes from makepkg instead of being parsed
@@ -171,7 +192,10 @@ for recipe in "${recipes[@]}"; do
 	for p in "${pkgnames[@]}"; do
 		compgen -G "$PLATFORM_REPO/$p-[0-9]*.pkg.tar.*" >/dev/null || have_all=0
 	done
-	hash="$(recipe_hash "$recipe")"
+	hash="$( { recipe_hash "$recipe"
+		for _p in ${extra_paths+"${extra_paths[@]}"}; do
+			(cd "$REPO_DIR" && find "$_p" -type f -exec sha256sum {} +)
+		done; } | LC_ALL=C sort | sha256sum | cut -d' ' -f1)"
 	if ((have_all)) && [ -f "$stamp" ] && [ "$(cat "$stamp")" = "$hash" ]; then
 		log "$pkgbase up to date (stamp $hash); nothing to build"
 		continue

@@ -1,0 +1,49 @@
+#!/bin/bash
+# Install the package's staged tree, its lifecycle entrypoints and the files the
+# builder staged under extra/.
+#
+# Everything under usr/lib/omarchy/google-boot/ is the boot chain the entrypoints
+# and the ALPM hook run: the ported scripts, the device facts they derive from
+# (shipped, so the packaged lib cannot drift from devices/google-asurada/), the
+# vboot developer keys depthchargectl needs, and the device-side lib.sh that
+# replaces the repository's build-host one.
+set -euo pipefail
+
+destination=${1:?usage: install <pkgdir>}
+addon="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+for tree in etc usr; do
+	[ -d "$addon/$tree" ] || continue
+	install -d "$destination/$tree"
+	cp -a "$addon/$tree/." "$destination/$tree/"
+done
+
+# The entrypoints the dispatcher execs, from the fixed path it resolves.
+for entrypoint in "$addon"/entrypoints/*; do
+	install -Dm755 "$entrypoint" "$destination/usr/lib/omarchy/google-boot/${entrypoint##*/}"
+done
+
+extra="$addon/extra"
+[ -d "$extra" ] || {
+	echo "install: $extra is missing; scripts/build-package.sh stages extra.list there" >&2
+	exit 1
+}
+
+install -Dm755 "$extra/boot/install-kpart.sh" "$destination/usr/lib/omarchy/google-boot/install-kpart.sh"
+install -Dm755 "$extra/boot/make-kpart.sh" "$destination/usr/lib/omarchy/google-boot/make-kpart.sh"
+install -Dm644 "$extra/boot/lib-cgpt.sh" "$destination/usr/lib/omarchy/google-boot/lib-cgpt.sh"
+
+install -Dm644 "$extra/devices/google-asurada/deviceinfo" \
+	"$destination/usr/lib/omarchy/google-boot/deviceinfo"
+install -Dm644 "$extra/devices/google-asurada/kernel-cmdline.conf" \
+	"$destination/usr/lib/omarchy/google-boot/kernel-cmdline.conf"
+
+# ChromiumOS' well-known developer keys: the machine boots dev-signed
+# (dev_boot_signed_only=0), so these are the keys a kernel update is signed with.
+for key in kernel.keyblock kernel_subkey.vbpubk kernel_data_key.vbprivk; do
+	install -Dm644 "$extra/boot/devkeys/$key" \
+		"$destination/usr/lib/omarchy/google-boot/devkeys/$key"
+done
+
+install -Dm644 "$extra/boot/99-omarchy-kpart.hook" \
+	"$destination/usr/share/libalpm/hooks/99-omarchy-kpart.hook"

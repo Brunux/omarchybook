@@ -2,14 +2,17 @@
 
 ## Project state (read this first)
 
-**Greenfield.** The only file here is `docs/plan.md`. There is no `README.md`, no `git` repo,
-and no `devices/`, `kernels/`, `scripts/`, etc. yet — plan §4 is the *target* layout, not the
-current tree. Do not assume scripts or manifests exist; check before referencing them.
-`git init` is itself an outstanding task (plan §9).
+Phases 0–5 of `docs/plan.md` are done as far as an off-device build can take them: the repository
+has `devices/`, `kernels/`, `boot/`, `platform/`, `scripts/`, `packages/`, `upstream/` and `keys/`,
+the kernel and both platform packages publish into a signed `[platform]` bundle outside the repo,
+and a rootfs builds and installs from it. Phase 6 (image, release, install, backup) is next; nothing
+has booted on hardware yet, so `reports/` is empty.
 
-`docs/plan.md` is the source of truth for scope, decisions, naming and phase order. Read it
-before proposing or writing anything; it is more current than this summary. Phase 0 is
-read-only recon whose answers may still change the design.
+`docs/plan.md` is the source of truth for scope, decisions, naming and phase order — each phase is
+ticked with the evidence that verified it, and unticked items say what they wait on. Read it before
+proposing or writing anything. `docs/recon.md` holds the measurements behind those answers,
+including the porting bugs in §12. Do not assume a script, manifest or package exists: check the
+phase that creates it.
 
 ## What this is
 

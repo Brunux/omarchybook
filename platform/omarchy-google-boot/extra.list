@@ -1,0 +1,12 @@
+# What this package ships but does not own: the boot chain is canonical in the
+# repository's boot/ (plan §4) and the device facts come from
+# devices/google-asurada/. scripts/build-package.sh stages these under
+# recipe/extra/ and counts them towards the recipe hash, so a change in either
+# place rebuilds the package; install reads them from extra/.
+boot/lib-cgpt.sh
+boot/make-kpart.sh
+boot/install-kpart.sh
+boot/devkeys
+boot/99-omarchy-kpart.hook
+devices/google-asurada/deviceinfo
+devices/google-asurada/kernel-cmdline.conf
