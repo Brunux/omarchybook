@@ -5,8 +5,9 @@ Hyprland, Quickshell and the `omarchy-*` tooling — to the **Google Hayato** Ch
 (MediaTek MT8192, `google-asurada`, no UEFI).
 
 It reuses the boot chain, kernel and device knowledge already proven in
-[`debian-aarch64`](../debian-aarch64) (v0.1.0, verified on hardware) and replaces only the
-distribution: Arch Linux ARM + Omarchy instead of Debian plus a hand-written sway UI.
+[`Nureb`](https://github.com/Brunux/Nureb) (the `debian-aarch64` port, v0.1.0, verified on
+hardware) and replaces only the distribution: Arch Linux ARM + Omarchy instead of Debian plus a
+hand-written sway UI.
 
 - **Status:** phases 0–6 of the plan are done as far as an off-device build can take them. The
   kernel (`linux-omarchy-book`) and both platform packages (`omarchy-google`, `omarchy-google-boot`)
@@ -14,9 +15,12 @@ distribution: Arch Linux ARM + Omarchy instead of Debian plus a hand-written swa
   installs from it, and `scripts/` writes a card (`write-sd.sh`), an image and a release
   (`make-image.sh`, `make-release.sh`, with the bundle published as a repository), installs it to the
   eMMC (`install-emmc.sh`) and backs a machine up and restores it (`backup-system.sh`,
-  `restore-system.sh`) — all rehearsed on loop devices. Phase 7 (hardware validation) is next: its
-  report tool (`scripts/check-system.sh`) is written and every check is mapped to a measurement in
-  `docs/recon.md` §14; nothing has booted on hardware yet, so `reports/` is empty.
+  `restore-system.sh`) — all rehearsed on loop devices. Phase 7 (hardware validation) is in
+  progress: three cards have booted on the Hayato and left their report and diagnostics in
+  [`reports/`](reports/), every FAIL in them mapped to a cause in `docs/recon.md` §14 and fixed in
+  the image; the fixes show (the shell runs, Omarchy's Hyprland configuration is in place, the
+  sleep lock is enabled, swap is up) and what Phase 7 is waiting for is a kept report with no
+  FAIL.
 - **Plan:** [`docs/plan.md`](docs/plan.md), each phase ticked with what verified it
 - **Evidence:** [`docs/recon.md`](docs/recon.md), the measurements behind every decision
 - **Agent/build instructions:** [`AGENTS.md`](AGENTS.md)
