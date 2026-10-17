@@ -197,6 +197,8 @@ Device knowledge that must not be lost in the port (each item cost hardware debu
 | 4 | **Root filesystem: ext4** | p2 `/boot` 512 MiB ext4, p3 ext4 — the layout already proven here. No snapper, no btrfs: a snapshot cannot be booted from the kernel partition. |
 | 5 | **Boot: ChromeOS GPT plus a signed depthcharge kpart** | The only boot path this hardware has. Layout, flags, DTB order and signing keys copied from the working port. |
 | 6 | **Reuse by vendoring, not submodules** | Each repository must build and release on its own from its own HEAD. |
+| 7 | **Upgrade path: a release publishes `[platform]`, and the image takes it when `PLATFORM_REPO_URL` is set** | Omarchy's own post-install leaf drops the build-time `[platform]`, which leaves a device unable to update the kernel or the platform packages at all. A release writes the bundle out as a signed repository (`platform/`); pointing a build at where it is served (`PLATFORM_REPO_URL`) writes the section back, with the signing key already trusted in every image. Empty by default, so an unreleased build carries no repository it could fail to reach. |
+| 8 | **A republished package gets a `pkgrel` bump when a release already carries it; ALARM's `alarm` account stays** | The build stamps are content-based, so a recipe or patch change republishes the same version with new bytes — fine inside a build, but a machine whose database already holds that version will not move to it, so a release bumps `pkgrel`. And the `alarm` account (uid 1000, wheel, ALARM's documented password) is left alone and *documented* instead of locked: `make-release.sh` warns about every account with a password at publish time, and the release notes say to change them. |
 
 ### Naming
 
@@ -257,10 +259,10 @@ omarchybook/
                               extra.list file lets a recipe stage files that live
                               outside it, counting towards its hash),
                               build-kernel.sh, build-omarchy.sh,
-                              build-rootfs.sh, install-kernel.sh,
+                              build-rootfs.sh,
                               write-sd.sh, make-image.sh, make-release.sh,
                               install-emmc.sh, backup-system.sh,
-                              restore-system.sh, check-system.sh,
+                              restore-system.sh, check-system.sh (Phase 7),
                               lib.sh, lib-dist.sh, 00-deps.sh
   docs/                       plan.md, recon.md, upstream.md, releases/<version>.md
   reports/                    check-system.sh output captured on real hardware
@@ -528,27 +530,71 @@ Phase 7's.*
 
 ### Phase 6 — Image, release, install, backup
 
-- [ ] `make-image.sh` on a loop device (size as `IMAGE_SIZE_MIB`) and `make-release.sh` producing
-      an `.img.xz`, a rootfs tarball, a `vmlinuz.kpart` and `SHA256SUMS`.
-- [ ] A `lib-dist.sh` equivalent: never publish straight out of `$ROOTFS` (Wi-Fi PSKs, SSH host
-      keys, machine-id); sanitize a copy and assert it clean.
-- [ ] Image hygiene from what Phase 4's verification turned up: ALARM's own `alarm` account
+- [x] `make-image.sh` on a loop device (size as `IMAGE_SIZE_MIB`) and `make-release.sh` producing
+      an `.img.xz`, a rootfs tarball, a `vmlinuz.kpart` and `SHA256SUMS`. *`scripts/make-image.sh`
+      and `scripts/make-release.sh`; the release also carries `platform/` (the bundle as a
+      repository), `RELEASE-INFO.txt` (commit, dirty flag, tag, kernel, Omarchy pin, bundle hashes,
+      bootstrap tarball hash) and two `SHA256SUMS`. `SIZE_MIB` defaults to the rootfs size plus
+      12.5% and a quarter GiB, rounded up to 256 MiB: an Arch + Omarchy install is ~9 GiB, where
+      Debian's fixed 4 GiB would die mid-copy. Rehearsed end to end against a fixture rootfs
+      (recon §13).*
+- [x] A `lib-dist.sh` equivalent: never publish straight out of `$ROOTFS` (Wi-Fi PSKs, SSH host
+      keys, machine-id); sanitize a copy and assert it clean. *`scripts/lib-dist.sh`. The paths are
+      excluded from the copy and the finished artifact is byte-searched for the profiles' SSIDs and
+      PSKs, because deleting a file after copying it leaves its bytes in the image's free blocks —
+      the measurement that shaped the Debian original. Added over it: the *build-state* rules this
+      port needs (the build-time `/packages` bundle, the bind-mounted pacman cache, the build's own
+      logs, `/tmp` and `/var/tmp`) and a fatal finding for any `/home/<name>` with no account
+      (recon §13). Tested with decoys: a planted profile is found and publication is refused.*
+- [x] Image hygiene from what Phase 4's verification turned up: ALARM's own `alarm` account
       (uid 1000, in `wheel`, with a password set) travels in the tarball and must not reach a
       release. Lock or delete it, and sweep for anything else the ALARM bootstrap leaves behind
       before `make-release.sh` publishes (Phase 7's `check-system.sh` should assert it).
-- [ ] An upgrade path for the bundle. The image configures no `[platform]` repository, so neither
+      *Decided 2026-10-17, having weighed locking and deleting it: **the account stays and the risk
+      is documented instead** — the build does not touch it (this port's user is `omarchy`), a
+      published image keeps ALARM's account as ALARM ships it, and `make-release.sh` prints a
+      warning naming every account with a password (`root`, from ALARM's tarball, included) so it
+      cannot be published unnoticed. The residual risk is a known password on a wheel account if a
+      machine is reachable before the passwords change; the release notes carry it and Phase 7's
+      `check-system.sh` asserts it. The sweep for everything else is done (above and recon §13).*
+- [x] An upgrade path for the bundle. The image configures no `[platform]` repository, so neither
       `linux-omarchy-book` nor `omarchy-google` can ever be updated on a device (recon §9); decide
       whether a release publishes the bundle as a repository the image trusts, and give a
       republished package — same version, new bytes, because a recipe or the vendored patch changed —
-      a version bump so an installed machine can actually move to it.
-- [ ] `write-sd.sh`, `install-emmc.sh` (rsync the running system onto `/dev/mmcblk0`, refusing the
+      a version bump so an installed machine can actually move to it. *Decided: a release publishes
+      the bundle as a repository (`make-release.sh` writes `platform/`: the signed packages and
+      their `.sig`, the database `repo-add` built during the image build, `platform.pub` and a
+      README) and the image takes a `[platform]` section pointing at it when `PLATFORM_REPO_URL` is
+      set — a build input in `scripts/lib.sh`, empty by default so an unreleased build still carries
+      no repository it could fail to reach. The trust is already in place: every image trusts the
+      bundle's signing key. A package that a release already carries gets a `pkgrel` bump before it
+      is republished (the content-addressed republish the build stamps use stays for build-internal
+      rebuilds), because pacman only moves forward on a version change (recon §9).*
+- [x] `write-sd.sh`, `install-emmc.sh` (rsync the running system onto `/dev/mmcblk0`, refusing the
       internal disk from the SD writer and the running root from either) and `install-kpart.sh`.
-- [ ] `backup-system.sh` and `restore-system.sh` ported from the working pair: raw GPT dumps, the
+      *All three in place (`install-kpart.sh` since Phase 5, from `boot/`). `write-sd.sh` and
+      `install-emmc.sh` live in `scripts/` and source `boot/lib-cgpt.sh`, the single copy of the
+      layout, which the boot package ships to the device. Both refuse `mmcblk0`, zram, the running
+      root and the disk carrying `$WORK_DIR` (on this hardware the build host *is* the device, so
+      those are the same disk). `write-sd.sh` is rehearsed on a 2 GiB loop: three partitions,
+      correct fstab, a 30 MiB FIT in p1 that `futility show` accepts (recon §13).*
+- [x] `backup-system.sh` and `restore-system.sh` ported from the working pair: raw GPT dumps, the
       kpart resolved from `kern_guid`, filesystems as tars, SHA256SUMS verified before writing,
       UUIDs taken from the archive's own `/etc/fstab`, refusing a differently sized disk, root-only.
+      *Both in `scripts/`. `backup-system.sh` runs on the host and writes the two GPT areas, the
+      p1 dump, two gzip tars, a transcript and a README that carries the restore instructions.
+      `restore-system.sh` was rehearsed on a loop device with exactly the same sector count as its
+      synthetic backup, with `DEEP=yes` and independently of the repository's own layout (UUIDs
+      from the archive's fstab): the GPT compares byte for byte, both filesystems take the original
+      UUIDs, `tar -d` agrees, and the five refusals hold (size, partition, not a block device, no
+      `CONFIRM=yes`, tampered `SHA256SUMS`). `backup-system.sh` also refuses to run from a chroot —
+      new here, and not in the Debian original (recon §13).*
 
 **Acceptance:** a release built from a committed HEAD only; a card written from that image boots;
-`restore-system.sh` rehearsed on a loop device with exactly the same sector count.
+`restore-system.sh` rehearsed on a loop device with exactly the same sector count. *The first is
+enforced by `make-release.sh` (a dirty tree is refused; `ALLOW_DIRTY=yes` is the rehearsal escape
+hatch) and recorded in `RELEASE-INFO.txt`. The third is done (recon §13). Booting the card is
+Phase 7's, on hardware.*
 
 ### Phase 7 — Hardware validation
 

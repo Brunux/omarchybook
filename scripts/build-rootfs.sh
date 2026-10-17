@@ -28,6 +28,7 @@ if [ "$(id -u)" -ne 0 ]; then
 		DEVICE="$DEVICE" LOCALE="$LOCALE" TIMEZONE="$TIMEZONE" \
 		TARGET_HOSTNAME="$TARGET_HOSTNAME" USERNAME="$USERNAME" USERPASS="$USERPASS" \
 		PLATFORM_REPO="$PLATFORM_REPO" PACMAN_CACHE="$PACMAN_CACHE" ROOTFS="$ROOTFS" \
+		PLATFORM_REPO_URL="$PLATFORM_REPO_URL" \
 		CHANNEL="$CHANNEL" OMARCHY_MIRROR="$OMARCHY_MIRROR" ALARM_MIRROR="$ALARM_MIRROR" \
 		"$(readlink -f "$0")" "$@"
 fi
@@ -390,6 +391,23 @@ if grep -q '^IgnorePkg' "$ROOTFS/etc/pacman.conf"; then
 	sed -i "s|^IgnorePkg *=.*|IgnorePkg = $ignore_pkgs|" "$ROOTFS/etc/pacman.conf"
 else
 	sed -i "/^\[options\]/a IgnorePkg = $ignore_pkgs" "$ROOTFS/etc/pacman.conf"
+fi
+
+# The upgrade path, the other half of the same policy. With no [platform]
+# repository that pin protects a kernel which could never be updated either
+# (docs/recon.md 9); with one, a released machine can move to the next release's
+# kernel, platform packages and boot chain. A package's signature is checked
+# against the key the image already trusts, so the URL is all that is missing,
+# and it points straight at the release's platform/ directory -- exactly what
+# scripts/make-release.sh writes.
+if [ -n "$PLATFORM_REPO_URL" ]; then
+	log "Adding the published [platform] repository to the image"
+	log "  Server = $PLATFORM_REPO_URL"
+	cat >> "$ROOTFS/etc/pacman.conf" <<EOF
+
+[platform]
+Server = $PLATFORM_REPO_URL
+EOF
 fi
 
 # The per-user phases /etc/skel cannot seed, as the user (the command refuses

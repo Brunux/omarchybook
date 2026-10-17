@@ -574,7 +574,89 @@ instead of on the build host.
 real kernel update, `setup-boot` on the first boot of a freshly written card, and the Unicode/keyd
 side of the platform layer all need the machine — i.e. Phase 7.
 
+## 13. Image, release, install and backup (Phase 6)
+
+**What was actually run.** Nothing in this phase needs hardware except the boot at the end of it, so
+every script was rehearsed against a fixture rootfs (`$WORK_DIR/rehearsal/fakerootfs`: the real
+kernel, initramfs and DTBs, ~35 MiB, plus deliberate decoys -- a Wi-Fi profile with a PSK,
+`ssh_host_rsa_key`, a non-empty `machine-id`, `/home/brunux/.cache/omarchybook/work`, `/packages`,
+`/var/log/pacman.log`, `/tmp/pulse-*`) and against loop devices: `write-sd.sh` on a 2 GiB card,
+`make-image.sh` twice (fixed 2 GiB and the automatic size), `make-release.sh` end to end,
+`backup-system.sh` on the host with heavy `BACKUP_EXCLUDES`, and `restore-system.sh` against a
+synthetic backup on a 6291456-sector loop with `DEEP=yes`. Green results: the GPT with the three
+ChromeOS entries and `priority=10 tries=5 successful=1` on p1, a 30 MiB FIT that `futility show`
+accepts (`preamble 2.2`, `Body verification succeeded`), fstab UUIDs matching `blkid`, the decoys
+gone from the published tree and *not* in the image's bytes, the released `.img.xz` verifying with
+`xz -t`, `tar -d` agreeing with the restored filesystems, and all five refusals (different disk size,
+a partition instead of a disk, not a block device, no `CONFIRM=yes`, a tampered `SHA256SUMS`).
+
+**The build rootfs carries more than the port, and some of it is the maintainer's.** Measured in the
+built rootfs before `lib-dist.sh` existed: `/var/cache/pacman/pkg` is the persistent download cache
+bind-mounted in by `build-rootfs.sh` (2.4 GiB, recon §9), `/packages` holds the whole build-time
+`[platform]` bundle (251 MiB) which the Omarchy post-install leaf made unreachable when it rewrote
+`/etc/pacman.conf`, `/var/log/pacman.log` (80 KiB) and `/var/log/omarchy-install.log` (8 KiB)
+transcribe the build, `/tmp` kept `pulse-PKdhtXMmr18n` and an omarchy lock file, and
+`/home/brunux/.cache/omarchybook/work` existed three levels deep -- the Phase 5 verification ran
+`make-kpart.sh` *inside* the image, where `$HOME` was the maintainer's, so `$WORK_DIR` was recreated
+there. All of that is now excluded from the copy and asserted absent: excluding rather than deleting
+is what keeps the bytes out of the image (the rule the Debian original measured), and a `/home/<name>`
+with no account in `/etc/passwd` is a fatal finding, which is what caught the last one.
+
+There are no Wi-Fi profiles in the built rootfs at all: `$WIFI_DIR` is defined and exported by
+`scripts/lib.sh` but nothing imports it, unlike the Debian build. So the byte check
+(`dist_assert_no_profile_bytes`) is currently vacuous -- it reports "No Wi-Fi profile in $ROOTFS or
+$WIFI_DIR: nothing to look for". It is kept, and tested with a decoy (a profile planted in the
+fixture is found and publication is refused), because a card built from a rootfs somebody has logged
+into *will* have profiles, and because that is the check that caught the same leak on the Debian side.
+
+**The build host's `du` and `cp` are BusyBox.** `du --apparent-size` and `du -B` do not exist there
+(`du: unrecognized option: B`), and neither does `cp --sparse=always`. Nothing in the released
+scripts may depend on GNU-only flags: `lib.sh` grew `du_mib()`/`file_mib()` (KiB, then divide),
+`make-image.sh` computes its default size with the former and reports the image with `stat -c %s`.
+`df -Pk` is fine as it is. The Arch target has coreutils, but these scripts run on the build host,
+which is this one.
+
+**The pipefail trap, again, in a check written for this phase.** `00-deps.sh` tested GNU tar's
+options with
+
+```sh
+if ! tar --help 2>/dev/null | grep -q -- "$_o"; then
+```
+
+and reported `tar --xattrs` missing on a tar that has it. The reason is the one §12 records for
+`grep -q` under `set -o pipefail`: `grep` exits on the match, `tar` gets SIGPIPE, the pipeline
+returns 141 and `!` turns that into "the option is missing". It only fired for `--xattrs` because
+that appears at line 167 of 324 lines of help, while `--acls` appears after tar has finished writing
+and no signal is ever sent. Fixed by capturing the help into a variable first. `lsblk -no PKNAME ... |
+head -1` in `backup-system.sh` and `restore-system.sh` carries the same hazard (a disk with nested
+children lists more than one line) and now ends in `|| true`.
+
+**`repo-add`'s database lives in the image, not in the bundle.** `$BUILD_ROOT/platform` holds the
+packages and their `.sig` and nothing else: `repo-add` runs inside the build rootfs, against
+`/packages`, so `platform.db.tar.gz` exists only there. `make-release.sh` therefore assembles the
+release's `platform/` from the *rootfs*, not from `$PLATFORM_REPO` -- which also means the database
+matches exactly the packages that image was built with, and that the database is unsigned (the
+released image's global `SigLevel = Required DatabaseOptional` accepts that, and every package
+carries its own signature).
+
+**`backup-system.sh` refuses a chroot, unlike the Debian original.** Nothing in it writes to the
+machine, so this is not about safety but about the artifact being right: from a chroot the tars are
+the chroot's root filesystem while the kernel partition and the partition table recorded beside them
+belong to the host -- a backup whose p1 does not match its rootfs, which is worse than no backup
+because it looks complete. `require_real_root()` is the same guard the rest of the chain uses
+(§12).
+
+**What has not been run.** A release built from the real 9.1 GiB rootfs. The build host has 13.0 GiB
+free with the rootfs, the build chroot and the pacman cache in place, and an image that fits that
+rootfs plus its `.xz` needs most of it; `$BUILD_CHROOT/build` (8.5 GiB of makepkg work tree, recon
+§9) is the reclaim the sizes were measured against. So the fixtures exercised the logic and the
+refusals, not the sizes: the release's own disk budget is the first thing Phase 7's build should
+watch. `sgdisk` is also absent from this host (gptfdisk), so `backup-system.sh` warns and records the
+raw GPT dumps only -- a restore onto a disk of the same size works with those, and the portable
+`<host>-gpt.bin` (the way onto a different disk) needs the package installed.
+
 ## Still open (need a chroot or hardware — not answerable read-only)
+
 
 1. **Resolved**: the built `depthcharge-tools` installs no kernel/initramfs hooks on Arch (verified
    from the package file list), so they need not be disabled as on Debian.

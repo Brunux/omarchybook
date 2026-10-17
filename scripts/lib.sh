@@ -39,6 +39,12 @@ warn() { printf '\033[1;33mWARN: %s\033[0m\n' "$*" >&2; }
 die()  { printf '\033[1;31mERROR: %s\033[0m\n' "$*" >&2; exit 1; }
 need_root() { [ "$(id -u)" -eq 0 ] || die "this command must run as root (use sudo)"; }
 
+# Sizes in MiB, without GNU-only options: the build host's du is BusyBox (no
+# --apparent-size, no -B), so ask for KiB and divide. `du -x` keeps a lingering
+# bind mount (the pacman cache, say) out of the count.
+du_mib()   { du -sxk "$1" 2>/dev/null | awk '{ print int(($1 + 1023) / 1024) }'; }
+file_mib() { echo $(( ($(stat -c %s "$1") + 1048575) / 1048576 )); }
+
 # ---------------------------------------------------------------------------
 # Device
 # ---------------------------------------------------------------------------
@@ -206,6 +212,17 @@ PLATFORM_KEY_UID="${PLATFORM_KEY_UID:-Omarchy Book Build <build@omarchybook.inva
 PLATFORM_GNUPGHOME="${PLATFORM_GNUPGHOME:-$BUILD_ROOT/keys/gnupg}"
 PLATFORM_KEY_FILE="${PLATFORM_KEY_FILE:-$BUILD_ROOT/keys/platform.pub}"
 
+# The upgrade path for a *published* image (plan Phase 6, docs/recon.md 9).
+# Omarchy's own post-install leaf rewrites /etc/pacman.conf and drops the
+# build-time [platform], so neither linux-omarchy-book nor omarchy-google can
+# ever be updated on a device. A release publishes the bundle as a repository
+# (scripts/make-release.sh: platform/) and, when this is set to where that
+# directory is served, build-rootfs.sh writes the [platform] section back into
+# the image -- the signing key is already trusted there, so the URL is the only
+# missing piece. Empty (the default) keeps an unreleased build exactly as it was:
+# no repository a machine could fail to reach.
+PLATFORM_REPO_URL="${PLATFORM_REPO_URL:-}"
+
 platform_key_fingerprint() {
 	GNUPGHOME="$PLATFORM_GNUPGHOME" gpg --batch --with-colons \
 		--list-keys "$PLATFORM_KEY_UID" 2>/dev/null |
@@ -256,6 +273,7 @@ export WIFI_DIR LOCALE TIMEZONE
 export KERNEL_PACKAGE KERNEL_PACKAGE_HEADERS
 export BOOT_SIZE_MIB BOOT_FS KERNEL_RELEASE
 export PLATFORM_REPO PACMAN_CACHE
+export PLATFORM_REPO_URL
 export PLATFORM_KEY_UID PLATFORM_GNUPGHOME PLATFORM_KEY_FILE
 export OMARCHY_GIT OMARCHY_COMMIT OMARCHY_SRC_DIR OMARCHY_PATCH_DIR
 export OMARCHY_PKGS_DIR OMARCHY_PACKAGE OMARCHY_SETTINGS_PACKAGE

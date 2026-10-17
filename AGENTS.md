@@ -2,17 +2,24 @@
 
 ## Project state (read this first)
 
-Phases 0–5 of `docs/plan.md` are done as far as an off-device build can take them: the repository
+Phases 0–6 of `docs/plan.md` are done as far as an off-device build can take them: the repository
 has `devices/`, `kernels/`, `boot/`, `platform/`, `scripts/`, `packages/`, `upstream/` and `keys/`,
-the kernel and both platform packages publish into a signed `[platform]` bundle outside the repo,
-and a rootfs builds and installs from it. Phase 6 (image, release, install, backup) is next; nothing
-has booted on hardware yet, so `reports/` is empty.
+the kernel and both platform packages publish into a signed `[platform]` bundle outside the repo, a
+rootfs builds and installs from it, and Phase 6's tooling writes a card or an image from that rootfs
+and backs a machine up and restores it. Phase 7 (hardware validation) is next; nothing has booted on
+hardware yet, so `reports/` is empty.
+
+Two Phase 6 decisions are easy to undo by accident: a release also publishes the bundle as a
+repository (`platform/`) and an image takes it only when `PLATFORM_REPO_URL` is set, and a package
+that a release already carries gets a `pkgrel` bump before it is republished. ALARM's `alarm`
+account stays in the image on purpose, and `make-release.sh` warns about every account with a
+password at publish time (plan §3, decisions 7 and 8).
 
 `docs/plan.md` is the source of truth for scope, decisions, naming and phase order — each phase is
 ticked with the evidence that verified it, and unticked items say what they wait on. Read it before
 proposing or writing anything. `docs/recon.md` holds the measurements behind those answers,
-including the porting bugs in §12. Do not assume a script, manifest or package exists: check the
-phase that creates it.
+including the porting bugs in §12 and §13. Do not assume a script, manifest or package exists: check
+the phase that creates it.
 
 ## What this is
 
@@ -58,5 +65,11 @@ the patch and the proposal in sync and delete it once merged.
 - All versioned artifacts are **English** (code, comments, commits, docs, scripts). Discussion
   with the maintainer may be **Spanish and/or English**, but artifacts are English only. This
   carries over from `debian-aarch64`.
-- Never publish build output straight from a rootfs: it carries Wi-Fi PSKs, SSH host keys and
-  machine-id. Reproduce `debian-aarch64`'s `lib-dist.sh` sanitize-and-assert rule (plan §6).
+- Never publish build output straight from a rootfs: it carries the maintainer's Wi-Fi PSKs, SSH
+  host keys, machine-id — and, as Phase 6 found, this repository's own build state. The rule is
+  `scripts/lib-dist.sh` (plan Phase 6, recon §13): those paths are *excluded from the copy* (deleting
+  them afterwards leaves their bytes in the image's free blocks) and the finished artifact is
+  byte-searched for the profiles' contents.
+- Shell scripts run under `set -euo pipefail` on a host whose `du` and `cp` are BusyBox: no GNU-only
+  flags (`du_mib`/`file_mib` in `scripts/lib.sh`), and a `cmd | head`/`| grep -q` needs `|| true`
+  unless the writer exits on its own (recon §12, §13).

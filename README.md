@@ -8,11 +8,14 @@ It reuses the boot chain, kernel and device knowledge already proven in
 [`debian-aarch64`](../debian-aarch64) (v0.1.0, verified on hardware) and replaces only the
 distribution: Arch Linux ARM + Omarchy instead of Debian plus a hand-written sway UI.
 
-- **Status:** phases 0–5 of the plan are done as far as an off-device build can take them. The
+- **Status:** phases 0–6 of the plan are done as far as an off-device build can take them. The
   kernel (`linux-omarchy-book`) and both platform packages (`omarchy-google`, `omarchy-google-boot`)
-  build and publish into a signed `[platform]` bundle outside the repository, and a rootfs builds
-  and installs from it. Phase 6 (image, release, install, backup) is next; nothing has booted on
-  hardware yet, so `reports/` is empty.
+  build and publish into a signed `[platform]` bundle outside the repository, a rootfs builds and
+  installs from it, and `scripts/` writes a card (`write-sd.sh`), an image and a release
+  (`make-image.sh`, `make-release.sh`, with the bundle published as a repository), installs it to the
+  eMMC (`install-emmc.sh`) and backs a machine up and restores it (`backup-system.sh`,
+  `restore-system.sh`) — all rehearsed on loop devices. Phase 7 (hardware validation) is next;
+  nothing has booted on hardware yet, so `reports/` is empty.
 - **Plan:** [`docs/plan.md`](docs/plan.md), each phase ticked with what verified it
 - **Evidence:** [`docs/recon.md`](docs/recon.md), the measurements behind every decision
 - **Agent/build instructions:** [`AGENTS.md`](AGENTS.md)
