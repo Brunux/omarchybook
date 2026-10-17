@@ -8,8 +8,10 @@ boot after a change.
 The first card booted on 2026-10-17 and left two files: `2026-10-17-first-boot.txt`, taken from
 tty1 before any desktop session existed, and `2026-10-17-diagnostics.txt`, its journal-level context
 (`scripts/collect-diagnostics.sh`, not a report itself but the evidence a FAIL gets mapped against --
-recon §14). A report taken from the desktop session belongs beside them: the same boot is worth two
-reports when the first one could not see the session.
+recon §14). The second card, written with the first card's fixes, left the same pair again:
+`2026-10-17-first-boot-second-card.txt`, this time from the desktop session, and its diagnostics. The
+same boot is worth two reports when one of them could not see the session, and worth a second pair
+when a change has to be judged against it.
 
 ## Making one
 
