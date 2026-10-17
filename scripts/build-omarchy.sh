@@ -132,10 +132,20 @@ if [ ! -d "$OMARCHY_SRC_DIR/.git" ]; then
 	git -C "$OMARCHY_SRC_DIR" init -q -b quattro
 	git -C "$OMARCHY_SRC_DIR" remote add origin "$OMARCHY_GIT"
 fi
-git -C "$OMARCHY_SRC_DIR" fetch -q --depth 1 origin "$OMARCHY_COMMIT"
+omarchy_ref=FETCH_HEAD
+if ! git -C "$OMARCHY_SRC_DIR" fetch -q --depth 1 origin "$OMARCHY_COMMIT"; then
+	# Offline is not a reason to stop when the pinned commit is already here:
+	# this build host has had no route to github.com at times, and the commit is
+	# part of the recipe (lib.sh), not a moving target. The object is what makes
+	# the reuse safe, so require exactly it.
+	git -C "$OMARCHY_SRC_DIR" cat-file -e "$OMARCHY_COMMIT^{commit}" 2>/dev/null ||
+		die "could not fetch $OMARCHY_COMMIT and it is not in $OMARCHY_SRC_DIR"
+	log "WARNING: could not fetch $OMARCHY_COMMIT; using the copy already in $OMARCHY_SRC_DIR"
+	omarchy_ref="$OMARCHY_COMMIT"
+fi
 # Discard whatever a previous run left (patched files, untracked new files) so
 # the tree is exactly the pinned commit before the series is applied.
-git -C "$OMARCHY_SRC_DIR" checkout -q -f FETCH_HEAD
+git -C "$OMARCHY_SRC_DIR" checkout -q -f "$omarchy_ref"
 git -C "$OMARCHY_SRC_DIR" clean -qfd
 
 log "Applying upstream/omarchy patches"
