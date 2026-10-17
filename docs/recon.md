@@ -363,6 +363,57 @@ not failures: `ERROR: failed to detect root filesystem` (the `autodetect` hook l
 that only the kpart's cmdline has, later) and `WARNING: architecture 'aarch64' not supported,
 skipping hook` (the `microcode` hook; there is no aarch64 microcode to load).
 
+## 11. The platform implementation: what `aarch64-google` must provide (Phase 4)
+
+Omarchy keeps the *platform independent* part upstream and moves everything hardware-specific into a
+platform package. `omarchy-mac-pkgs` is the model (a separate repository upstream); ours lives in
+this repository and is published into `[platform]` like the kernel. Reading the two repositories
+together (the vendored patch and the mac packages) gives the contract below.
+
+**Registration.** The vendored patch already does it: `bin/omarchy-hw-aarch64-google` is the
+predicate, `omarchy-hw-platform` maps the manifest's `google` and the `google,` device-tree prefix
+to `aarch64-google`, and `bin/omarchy-lifecycle-dispatch` registers
+
+| operation | implementation dir | package |
+|---|---|---|
+| `setup-system`, `setup-user`, `post-install`, `pre-remove` | `/usr/lib/omarchy/google` | `omarchy-google` |
+| `setup-boot`, `update-verify` (**required**) | `/usr/lib/omarchy/google-boot` | `omarchy-google-boot` |
+
+with `groups=('omarchy-platform-google')` and `provides=('omarchy-platform')` on the first one.
+**A gap in the patch, copied from Apple's asymmetry**: `install/omarchy-aarch64-google.packages`
+lists the *dependencies* (`keyd`, `alsa-ucm-conf`, `alsa-utils`, `pipewire-alsa`, `vboot-utils`,
+`depthcharge-tools`, `linux-firmware-mediatek`, `linux-firmware-realtek`) but **not** the two
+platform packages — Apple's list names `omarchy-mac` and `omarchy-mac-boot`. Without adding them,
+nothing pulls the platform packages in and `setup-boot`/`update-verify` answer exit 3 forever.
+
+**The leaf contract.** The dispatcher only execs an entrypoint that is a regular executable file
+(never a symlink anywhere on the path to `/`), root-owned, with `(mode & 022) == 0` — so
+`#!/bin/bash -p` and `install -Dm755`, which is what the mac `install` script does for every file in
+`entrypoints/`. A leaf: rejects bad arguments with `exit 2`; re-checks the platform and **exits 0**
+silently when it is not `aarch64-google`; is idempotent through negative-guard **marker files**
+(never blind writes), e.g. a marker under `/var/lib/omarchy-google/` guarded by `[[ ! -f $marker ]]`;
+preserves an administrator's override (an `/etc` override or a mask means "leave it"); and lets
+failures propagate (`set -e`).
+
+**Platform data is flat**: `/usr/share/omarchy-platform/{displays.conf,key-names,audio.json,
+display-cutouts.json,keyrings}`, owned by the platform package. There is no per-platform
+subdirectory — the plan said `/usr/share/omarchy-platform/google/` and that was wrong (§6 fixed).
+Every reader tolerates a missing file, so a platform ships only what applies:
+
+| file | format | read by |
+|---|---|---|
+| `displays.conf` | `backlight-skip <glob>`, `backlight-prefer <name>`, `ddc-require-connector-ddc` | `bin/omarchy-hw-display`, `bin/omarchy-brightness-display` |
+| `key-names` | `<keysym> <name>`, both `^[A-Za-z0-9_]+$` | `bin/omarchy-menu-keybindings` |
+| `audio.json` | `{"hidden":[<regex>…],"replaced":[{"node":…,"by":…}]}` | `shell/Commons/AudioNodes.qml` |
+
+A Chromebook panel has no notch, so `display-cutouts.json` and `keyrings` (repository keyrings a
+platform adds) do not apply and are left out.
+
+**Hardware drop-ins the mac package uses and we need**: vendor directories
+(`/usr/lib/udev/rules.d/` for the brightnessctl rule, `/usr/lib/systemd/…` for units and presets,
+`/usr/lib/modprobe.d/`, `/usr/lib/tmpfiles.d/`, `/usr/lib/NetworkManager/`), which need no enable
+step because systemd/udev/NetworkManager read the vendor path directly.
+
 ## Still open (need a chroot or hardware — not answerable read-only)
 
 1. **Resolved**: the built `depthcharge-tools` installs no kernel/initramfs hooks on Arch (verified

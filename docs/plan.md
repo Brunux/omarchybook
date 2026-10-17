@@ -377,7 +377,8 @@ hardware stays reachable.*
 
 **Acceptance:** `omarchy-hw-platform` prints `aarch64-google`, from the manifest and from a
 `google,asurada` device tree; `setup-boot`/`update-verify` resolve to `omarchy-google-boot` and stop
-at "it is not installed" (exit 3 — Phase 4's package), while `setup-system` and `setup-user`
+at "it is not installed" (exit 3 until the boot package of Phase 5 provides them), while
+`setup-system` and `setup-user`
 succeed; only `linux-omarchy-book` provides the kernel, `snapper`/`btrfs-progs`/`limine*` are absent,
 and `omarchy-version` reports `4.0.0.r7026.g51bfd1d-1`.
 
@@ -394,9 +395,13 @@ and `omarchy-version` reports `4.0.0.r7026.g51bfd1d-1`.
 - [ ] Backlight: a udev rule for `brightnessctl` (group `video`, `g+w`) if Arch ships none.
 - [ ] `zram-generator` (already in Omarchy's own aarch64 list), `wireless-regdb`, journald and
       clock settings.
-- [ ] `/usr/share/omarchy-platform/google/`: `displays.conf`, `audio.json` and `key-names`
-      describing a Chromebook action row with no F-keys.
-- [ ] A `setup-system` leaf (the `aarch64-google` implementation) applying the quirks, idempotently.
+- [ ] `/usr/share/omarchy-platform/` — the five files are **flat**, not under a per-platform
+      directory (recon §11): `displays.conf` (backlight device rules), `key-names` (the Chromebook
+      action row, which has no F-keys) and `audio.json` describing what the MT8192 card hides.
+      `display-cutouts.json` and `keyrings` do not apply to a Chromebook panel.
+- [ ] The `omarchy-google` package: it owns those files, the keyd configuration, the brightnessctl
+      udev rule and the vendor drop-ins (`/usr/lib/udev`, `/usr/lib/systemd`, …), and its
+      `setup-system` leaf (the `aarch64-google` implementation) applies the quirks idempotently.
 
 **Acceptance:** WiFi, Bluetooth, speaker, suspend on lid/power/Lock key and the backlight keys all
 work on the booted image, verified by the hardware run in Phase 7.
@@ -448,8 +453,9 @@ regression rather than a hypothetical.
 - [ ] `docs/upstream.md`: the `aarch64-google` proposal — detection change, lifecycle operations,
       package list, platform data — with its reasoning and the hardware it was verified on.
 - [ ] A PR to `omacom/omarchy` (detection, dispatch, `install/hardware/google/*`,
-      `install/omarchy-aarch64-google.packages`, `/usr/share/omarchy-platform/google/*`) and, if
-      the manifests need it, one to `omacom/omarchy-iso` adding `google` as a platform name.
+      `install/omarchy-aarch64-google.packages`, `/usr/share/omarchy-platform/*` owned by
+      `omarchy-google`) and, if the manifests need it, one to `omacom/omarchy-iso` adding `google` as
+      a platform name.
 - [ ] Once merged, delete the vendored patch: the repository keeps building from stock Omarchy.
 
 ---
@@ -476,7 +482,7 @@ Patch surface:
 | `bin/omarchy-lifecycle-dispatch` | register the `aarch64-google` operations: `setup-boot`, `setup-system`, `update-verify`, `post-install`, and whatever Phase 0 shows is mandatory |
 | `install/hardware/google/` | `boot.sh` (ChromeOS GPT plus the signed kpart, resolved from `kern_guid` and the device tree), `firmware.sh` (MediaTek/RTW88), `keyboard.sh` (keyd), `audio.sh` (UCM) |
 | `install/omarchy-aarch64-google.packages` | `cgpt`, `vboot-utils`, `depthcharge-tools`, `keyd`, `alsa-ucm-conf` and friends, named like `omarchy-aarch64-apple.packages` |
-| `/usr/share/omarchy-platform/google/` | `displays.conf`, `audio.json`, `key-names` |
+| `/usr/share/omarchy-platform/` | flat, owned by `omarchy-google`: `displays.conf`, `audio.json`, `key-names` (no per-platform subdirectory — recon §11) |
 
 While the PR is open the patch lives in `upstream/omarchy/patches/` with a `series` file and is
 applied by `build-rootfs.sh`. The patch *is* the proposal, so the two cannot drift.
