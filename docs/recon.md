@@ -646,6 +646,16 @@ belong to the host -- a backup whose p1 does not match its rootfs, which is wors
 because it looks complete. `require_real_root()` is the same guard the rest of the chain uses
 (§12).
 
+**A chroot's `/dev` is a build input, not furniture.** The Phase 7 kernel rebuild compiled for an
+hour and then died in makepkg's packaging phase with `/dev/null: Permission denied` and `ERROR:
+Failed to create the directory $BUILDDIR`: `BUILD_CHROOT/dev/null` had been replaced by a plain
+0644 file, so the build's own user could not write to it -- while `build()` itself got away with it,
+because the host's `/dev` is bound over that directory for the run. `lib.sh`'s `device_nodes()`
+recreates the standard nodes where one is missing or is not a device, called by `build-package.sh`
+and `build-rootfs.sh` *before* their bind mounts (never through them: `mknod` under the bind would
+change the host's own devices). The lesson is about *when* a phase fails: a broken `/dev/null` costs
+nothing until the part of the build that runs as the unprivileged builder.
+
 **What has not been run.** A release built from the real 9.1 GiB rootfs. The build host has 13.0 GiB
 free with the rootfs, the build chroot and the pacman cache in place, and an image that fits that
 rootfs plus its `.xz` needs most of it; `$BUILD_CHROOT/build` (8.5 GiB of makepkg work tree, recon
