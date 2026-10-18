@@ -553,7 +553,10 @@ Phase 7's.*
       bootstrap tarball hash) and two `SHA256SUMS`. `SIZE_MIB` defaults to the rootfs size plus
       12.5% and a quarter GiB, rounded up to 256 MiB: an Arch + Omarchy install is ~9 GiB, where
       Debian's fixed 4 GiB would die mid-copy. Rehearsed end to end against a fixture rootfs
-      (recon §13).*
+      (recon §13). *v0.1.0 then built it for real and priced it: ~25 GiB of working disk, because
+      the rootfs, the image and `lib-dist`'s staging copy exist at once, and the image and the
+      tarball come out over the 2 GiB a file in a GitHub release may be, so both ship as parts cut
+      at 1800 MiB, with `SHA256SUMS` over the whole file as the check (recon §13).*
 - [x] A `lib-dist.sh` equivalent: never publish straight out of `$ROOTFS` (Wi-Fi PSKs, SSH host
       keys, machine-id); sanitize a copy and assert it clean. *`scripts/lib-dist.sh`. The paths are
       excluded from the copy and the finished artifact is byte-searched for the profiles' SSIDs and
