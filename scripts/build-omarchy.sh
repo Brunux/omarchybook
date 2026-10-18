@@ -49,7 +49,7 @@ mount_build() {
 	for m in dev proc sys; do
 		mountpoint -q "$BUILD_CHROOT/$m" || mount --bind "/$m" "$BUILD_CHROOT/$m"
 	done
-	cp /etc/resolv.conf "$BUILD_CHROOT/etc/resolv.conf"
+	resolv_conf "$BUILD_CHROOT"
 }
 in_chroot() { chroot "$BUILD_CHROOT" "$@"; }
 
@@ -66,7 +66,13 @@ bootstrap_chroot() {
 		curl -fSL --retry 3 -o "$SRC_DIR/$ALARM_TARBALL" "$ALARM_URL"
 	fi
 	mkdir -p "$BUILD_CHROOT"
-	tar -xpf "$SRC_DIR/$ALARM_TARBALL" -C "$BUILD_CHROOT" 2>/dev/null
+	# The tarball ships pacman and makepkg already, so neither can mark a
+	# bootstrapped chroot; the keyring that pacman-key --init creates is the real
+	# marker. Unpack only when there is nothing there, so a re-run after a failed
+	# bootstrap continues instead of unpacking 790 MiB again.
+	if [ ! -x "$BUILD_CHROOT/usr/bin/pacman" ]; then
+		tar -xpf "$SRC_DIR/$ALARM_TARBALL" -C "$BUILD_CHROOT" 2>/dev/null
+	fi
 
 	# pacman 7 sandboxes transactions with Landlock; a build host without it
 	# aborts every transaction (docs/recon.md).
@@ -99,7 +105,7 @@ EOF
 	in_chroot pacman -S --noconfirm --needed "${BUILD_PACKAGES[@]}"
 }
 
-if [ ! -x "$BUILD_CHROOT/usr/bin/makepkg" ]; then
+if [ ! -d "$BUILD_CHROOT/etc/pacman.d/gnupg" ]; then
 	bootstrap_chroot
 fi
 # pacman's CheckSpace cannot resolve the chroot's root mount point on this build

@@ -96,7 +96,7 @@ device_nodes "$ROOTFS"
 for m in dev proc sys; do
 	mountpoint -q "$ROOTFS/$m" || mount --bind "/$m" "$ROOTFS/$m"
 done
-cp /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
+resolv_conf "$ROOTFS"
 
 # ---------------------------------------------------------------------------
 # pacman configuration

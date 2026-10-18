@@ -66,6 +66,17 @@ device_nodes() {
 	done
 }
 
+# A fresh ALARM root ships /etc/resolv.conf as a symlink into /run
+# (/run/systemd/resolve/resolv.conf), which dangles until systemd-resolved
+# starts. cp will not write through a dangling symlink -- and following it would
+# resolve outside the root, since the target is absolute -- so drop the symlink
+# and write the host's resolvers as a regular file for the duration of the build
+# (recon §13).
+resolv_conf() {
+	rm -f "$1/etc/resolv.conf"
+	cp /etc/resolv.conf "$1/etc/resolv.conf"
+}
+
 # ---------------------------------------------------------------------------
 # Device
 # ---------------------------------------------------------------------------

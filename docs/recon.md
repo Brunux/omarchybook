@@ -683,6 +683,24 @@ scripts may depend on GNU-only flags: `lib.sh` grew `du_mib()`/`file_mib()` (KiB
 `df -Pk` is fine as it is. The Arch target has coreutils, but these scripts run on the build host,
 which is this one.
 
+**A fresh ALARM root's `/etc/resolv.conf` is a symlink into `/run`.** The tarball ships
+`/etc/resolv.conf -> /run/systemd/resolve/resolv.conf`, which dangles until systemd-resolved starts,
+and the first `build-package.sh` on a clean `$BUILD_ROOT` died on it (`cp: not writing through
+dangling symlink`). Following the link would be worse than the error: the target is absolute, so `cp`
+resolves it *outside* the root the build is meant to write. All three builders now call
+`resolv_conf <root>` (`lib.sh`), which drops the symlink and writes the host's resolvers as a regular
+file for the build; `/etc/resolv.conf` is the network stack's own file at runtime, so what the image
+carries at that path is transient.
+
+**The chroot bootstrap never ran.** `bootstrap_chroot` was gated on
+`[ ! -x "$BUILD_CHROOT/usr/bin/makepkg" ]`, but the ALARM tarball ships `makepkg` (and `pacman`), so
+the gate was false on a freshly extracted chroot: `pacman-key --init` never ran and the base-devel
+install died on an empty keyring (`warning: Public keyring not found`, `error: required key missing
+from keyring`). The gate is now the keyring directory that `pacman-key --init` creates, and the
+extraction is gated on `usr/bin/pacman` so a re-run after a failed bootstrap continues instead of
+unpacking the 790 MiB tarball again. `build-package.sh` and `build-omarchy.sh` share the chroot, so
+both gates moved together.
+
 **The pipefail trap, again, in a check written for this phase.** `00-deps.sh` tested GNU tar's
 options with
 
