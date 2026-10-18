@@ -570,6 +570,53 @@ flags `!DEV DEV !REC`, and `mt8192-asurada-hayato-r1.dtb` is the first DTB in th
 phase 1's acceptance re-run through the files the package ships, on the python the device runs,
 instead of on the build host.
 
+**The installer reproduces pmbootstrap's path, which is the one proven on this machine.** The
+sibling ported that path line by line (`partition_cgpt()`, `sanity_check_boot_size()`,
+`mount_disk()`, `format_partition_with_filesystem()`, `create_fstab()` in `pmb/install/`), and this
+port carries the same code in `boot/lib-cgpt.sh`, with every deviation called out at the line that
+makes it. What changed here, and what forced each change:
+
+- **The root partition ends 33 sectors before the end of the device, not 2048.** Those 33 sectors are
+  the 32-sector secondary GPT plus its header, and `partition_cgpt()` sizes the partition around
+  them. Measured on a 2048 MiB loop: `p3 1318912+2875359`, `Sec GPT table` at sector 4194271 and the
+  header at 4194303 — and the same arithmetic in a 4096 MiB image built by `make-image.sh`
+  (`p3 1318912+7069663`). `- 2048` only wasted a MiB; what it did not do was leave the backup table
+  where the proven layout puts it.
+- **A mounted partition is refused instead of unmounted silently**, as `mount_disk()` does
+  ("is mounted! Will not attempt to format this!"). The test for it cannot be `mountpoint -q`: that
+  asks whether the *path* is a mount point, which a device node never is. Measured with `p2` mounted,
+  `mountpoint -q /dev/loop0p2` exits non-zero while `findmnt -rn -S /dev/loop0p2` names the
+  mountpoint — so the old loop never unmounted anything either, and went on to `wipefs` and `mkfs`
+  over whatever was mounted. The refusal fires with `ERROR: /dev/loop0p2 is mounted; unmount it first
+  (udisksctl unmount -b /dev/loop0p2) and run again`; both the loop-device rehearsal and an image
+  build leave the function with nothing to unmount, because neither mounts anything before calling
+  it. `wipefs` is gone as well: `disk_layout_create()` zeroes both GPT areas itself and `mkfs -F`
+  overwrites the signatures inside the partitions.
+- **`mkfs` gets `-q`, and `partprobe` runs right after the `cgpt add`s**, as
+  `format_partition_with_filesystem()` and `install_system_image()` do.
+- **`/etc/fstab` gets pmbootstrap's options**: `defaults` for the root and `nodev,nosuid,noexec` for
+  `/boot`, which is also how the running Nura mounts its `/boot`. The port had `noatime` on both and
+  `errors=remount-ro` on the root; the kernel mounts `defaults` as `relatime`, which is what the
+  `noatime` was for, but dropping `errors=remount-ro` does leave ext4's own `Errors behavior:
+  Continue` (measured with `tune2fs -l` on a fresh `mkfs.ext4`) — the one line of this list that is a
+  behavioural difference rather than a fix, and the images published as v0.1.0 predate it. The pass
+  column stays `0 1`/`0 2`: pmbootstrap writes `0 0` because its init fsck's for itself, while this
+  image has systemd-fsck to order the two.
+- **A boot partition below 512 MiB is refused**, as `sanity_check_boot_size()` does. Measured:
+  `BOOT_SIZE_MIB=256` dies before a single sector is written.
+- **The kpart's command line is joined with an explicit separator.** `KERNEL_CMDLINE` comes from
+  `tr '\n' ' '` over `kernel-cmdline.conf`, which produces a separator only when that file ends with
+  a newline. Measured with a file that does not end with one: `quiet loglevel=2root=UUID=…`, a single
+  argument depthcharge would hand the kernel as-is; `boot/make-kpart.sh` builds the space itself now.
+  `devices/google-asurada/kernel-cmdline.conf` does end with a newline, so here it was latent — in the
+  sibling it was live, which is how it was found.
+
+Both refusals, the geometry and the generated fstab were verified off-device, which is all of it that
+can be: `make-image.sh` end to end against a fixture rootfs (the real kernel, initramfs and DTBs, ~35
+MiB) reported `futility: dev-signed FIT, preamble 2.2, body verification succeeded`, the kpart's
+`root=UUID=` equal to the image's p3, and the new fstab inside the image with the secondary GPT
+intact.
+
 **What only a boot can settle.** Everything above is verified in a chroot. Writing p1, the hook on a
 real kernel update, `setup-boot` on the first boot of a freshly written card, and the Unicode/keyd
 side of the platform layer all need the machine — i.e. Phase 7.

@@ -76,7 +76,14 @@ fi
 
 # depthchargectl/mkdepthcharge prepends "kern_guid=%U" itself (see
 # --no-kern-guid), so it must NOT be added here.
-CMDLINE="${KERNEL_CMDLINE}${CMDLINE_EXTRA}"
+#
+# get_cmdline() in boot-deploy-functions.sh appends the UUIDs to the deviceinfo
+# command line separated by a space; the separator is built here instead of being
+# inherited from the `tr '\n' ' '` in lib.sh, which only produces one when the
+# file ends with a newline. Without this, a kernel-cmdline.conf whose last line
+# has no trailing newline would be glued to root=UUID=... and depthcharge would
+# hand the kernel a command line it cannot parse.
+CMDLINE="$(printf '%s %s' "$KERNEL_CMDLINE" "$CMDLINE_EXTRA" | tr -s ' ' | sed -e 's/^ //' -e 's/ $//')"
 log "Building kpart (device=$DEVICE board=$DEPTHCHARGE_BOARD compression=$DEPTHCHARGE_COMPRESSION)"
 log "  kernel : $KERNEL_IMG"
 log "  initrd : $INITRD"

@@ -15,9 +15,17 @@
 # /boot is kept separate exactly as Nura has it, so the two installations on
 # this machine look the same and the eMMC is a faithful copy of the tested card.
 #
-# Ported from debian-aarch64 (docs/plan.md §2.5). The logic is unchanged except
-# require_real_root() below; only the package that provides futility differs
-# (Arch: `vboot-utils`).
+# Ported from debian-aarch64 (docs/plan.md §2.5), which reproduces the install
+# method pmbootstrap proved on this Chromebook part by part:
+#   partition_cgpt(), sanity_check_boot_size()  pmb/install/partition.py
+#   mount_disk()                                pmb/install/blockdevice.py
+#   format_partition_with_filesystem()          pmb/install/format.py
+#   create_fstab(), the partprobe after it      pmb/install/_install.py
+#   check_image_size()                          boot-deploy-functions.sh
+# Deviations are called out at the line that makes them; there is no silent one.
+# What this port adds on top is require_real_root() below (the sibling carries the
+# same check inline in its install-kpart.sh), and the package that provides
+# futility differs: Arch ships it in `vboot-utils`.
 
 # True inside a chroot, where /proc/cmdline -- and so the kern_guid every script
 # here resolves the kernel partition from -- describes the *host*: the root of
@@ -42,16 +50,27 @@ require_real_root() {
 	fi
 }
 
-# Release a disk and its partitions: drop mounts and swap, then stale signatures
-# (cgpt trips over leftover GPT headers otherwise). Both naming schemes are
-# covered: mmcblk1p1 and sda1.
+# Prepare a disk for repartitioning. Both naming schemes are covered: mmcblk1p1
+# and sda1.
+#
+# A mounted partition is refused instead of unmounted silently, as mount_disk()
+# in pmbootstrap's pmb/install/blockdevice.py does ("is mounted! Will not attempt
+# to format this!"): a card the desktop auto-mounted has to be unmounted on
+# purpose. The test for it is not the obvious one -- `mountpoint -q "$_part"`
+# asks whether that *path* is a mount point, which a device node never is, so it
+# answered "no" for a mounted partition and this loop never unmounted anything
+# (docs/recon.md §12). The mount table is searched by source instead. Active swap
+# is turned off as well (pmbootstrap does not check for it, but mkfs on a live
+# swap partition fails) and no signature is wiped: disk_layout_create() zeroes
+# both GPT areas itself, and `mkfs -F` overwrites whatever the partitions carried.
 disk_release() {
 	_disk="$1"
 	for _part in "$_disk" "$_disk"p* "$_disk"[0-9]*; do
 		[ -b "$_part" ] || continue
+		if findmnt -rn -S "$_part" >/dev/null 2>&1 || grep -qs "^$_part " /proc/mounts; then
+			die "$_part is mounted; unmount it first (udisksctl unmount -b $_part) and run again"
+		fi
 		swapoff "$_part" 2>/dev/null || true
-		mountpoint -q "$_part" 2>/dev/null && umount "$_part" || true
-		wipefs -a "$_part" >/dev/null 2>&1 || true
 	done
 }
 
@@ -68,14 +87,27 @@ disk_release() {
 # pmb/install/partition.py: successful, 5 tries, priority 10.
 disk_layout_create() {
 	_disk="$1"
+	# sanity_check_boot_size() in pmbootstrap's pmb/install/_install.py refuses to
+	# go on with a boot partition below the 512 MiB default ("this can lead to
+	# problems later on"), and its deviceinfo schema default for boot_filesystem is
+	# ext2 -- the filesystem BOOT_FS defaults to here.
+	[ "$BOOT_SIZE_MIB" -ge 512 ] ||
+		die "BOOT_SIZE_MIB=$BOOT_SIZE_MIB is below the 512 MiB pmbootstrap requires; use BOOT_SIZE_MIB=512"
 	TOTAL="$(blockdev --getsz "$_disk")"
 	BOOT_START=$((KPART_START_SECTORS + KPART_SIZE_SECTORS))
 	BOOT_SIZE=$((BOOT_SIZE_MIB * 2048))
 	ROOT_START=$((BOOT_START + BOOT_SIZE))
-	ROOT_SIZE=$((TOTAL - ROOT_START - 2048))
+	# partition_cgpt() in pmb/install/partition.py sizes the root partition as
+	# dev_size - root_start - 33: the 32-sector secondary GPT plus its header, so
+	# the backup table survives and the tail of the device is not claimed by p3.
+	ROOT_SIZE=$((TOTAL - ROOT_START - 33))
 	[ "$ROOT_SIZE" -gt 1048576 ] ||
 		die "device too small for a root filesystem: $_disk ($(blockdev --getsize64 "$_disk") bytes)"
 
+	# Not in pmbootstrap, which lets parted handle the old table on its own: zero
+	# both GPT areas first so no stale header can make `cgpt create` fail with
+	# GPT_ERROR_INVALID_HEADERS. parted writes the protective MBR and the table
+	# right after, so the result is the one partition_cgpt() produces.
 	dd if=/dev/zero of="$_disk" bs=512 count=34 conv=fsync 2>/dev/null
 	dd if=/dev/zero of="$_disk" bs=512 seek=$((TOTAL - 33)) count=33 conv=fsync 2>/dev/null
 	parted -s "$_disk" mktable gpt
@@ -84,7 +116,10 @@ disk_layout_create() {
 		-S 1 -T 5 -P 10 "$_disk"
 	cgpt add -i 2 -b "$BOOT_START" -s "$BOOT_SIZE" -t efi -l pmOS_boot "$_disk"
 	cgpt add -i 3 -b "$ROOT_START" -s "$ROOT_SIZE" -t data -l pmOS_root "$_disk"
-	# Make the kernel pick up the new table (partx avoids BLKRRPART's EBUSY).
+	# install_system_image() runs `partprobe` right after partitioning "in case
+	# parted couldn't inform the kernel"; partx -d then -a does the same job and
+	# avoids BLKRRPART's EBUSY on this card.
+	partprobe "$_disk" 2>/dev/null || true
 	partx -d "$_disk" 2>/dev/null || true
 	partx -a "$_disk" 2>/dev/null || blockdev --rereadpt "$_disk" 2>/dev/null || true
 	command -v udevadm >/dev/null && udevadm settle || sleep 2
@@ -111,13 +146,19 @@ disk_layout_parts() {
 # Sets BOOT_UUID and ROOT_UUID. Unmount with disk_layout_umount.
 disk_layout_mount() {
 	_disk="$1" _mnt="$2"
+	# The mkfs command lines are the ones format_partition_with_filesystem() in
+	# pmbootstrap's pmb/install/format.py builds for these filesystems: mkfs.ext2
+	# for the boot partition (the schema default), mkfs.ext4 for the root, both
+	# with -F -q and the pmOS_* label. It adds -i 8192 only when formatting an
+	# image file, to keep a small image from running out of inodes; our images are
+	# 11 GiB with room to spare, so the default ratio is already enough.
 	log "Formatting $BOOT_PART ($BOOT_FS, label pmOS_boot)"
 	command -v "mkfs.$BOOT_FS" >/dev/null ||
 		die "no mkfs.$BOOT_FS on this system; set BOOT_FS to a filesystem it can create"
-	"mkfs.$BOOT_FS" -F -L pmOS_boot "$BOOT_PART" >/dev/null
+	"mkfs.$BOOT_FS" -F -q -L pmOS_boot "$BOOT_PART" >/dev/null
 	BOOT_UUID="$(blkid -s UUID -o value "$BOOT_PART")"
 	log "Formatting $ROOT_PART (ext4, label pmOS_root)"
-	mkfs.ext4 -F -L pmOS_root "$ROOT_PART" >/dev/null
+	mkfs.ext4 -F -q -L pmOS_root "$ROOT_PART" >/dev/null
 	ROOT_UUID="$(blkid -s UUID -o value "$ROOT_PART")"
 	[ -n "$BOOT_UUID" ] && [ -n "$ROOT_UUID" ] || die "could not read partition UUIDs on $_disk"
 	log "Root UUID: $ROOT_UUID"
@@ -135,11 +176,18 @@ disk_layout_umount() {
 }
 
 # /etc/fstab for the layout above (both filesystems, by UUID).
+#
+# Options as create_fstab() in pmbootstrap's pmb/install/_install.py writes them:
+# plain "defaults" for the root, nodev,nosuid,noexec for /boot -- which is also
+# how the running Nura system on this machine mounts /boot (docs/recon.md §12).
+# The pass column is the one difference: pmbootstrap writes 0 0 because its own
+# init takes care of fsck, while this image has systemd-fsck, which needs 1 for
+# the root and 2 for the rest to order them.
 disk_layout_fstab() {
 	_mnt="$1"
 	cat >"$_mnt/etc/fstab" <<EOF
-UUID=$ROOT_UUID	/	ext4	defaults,noatime,errors=remount-ro	0 1
-UUID=$BOOT_UUID	/boot	$BOOT_FS	defaults,noatime	0 2
+UUID=$ROOT_UUID	/	ext4	defaults	0 1
+UUID=$BOOT_UUID	/boot	$BOOT_FS	nodev,nosuid,noexec	0 2
 EOF
 }
 

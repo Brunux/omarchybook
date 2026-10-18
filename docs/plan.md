@@ -514,7 +514,15 @@ markers under `/var/lib/omarchy-google/`, and a second run changes nothing.*
       the device through `install-kpart.sh`, which sources it for `kpart_fits`, `kpart_verify` and
       the chroot guard. Its disk-writing callers are Phase 6's `write-sd.sh`/`install-emmc.sh`. The
       geometry comes from `deviceinfo` (kpart start/size, boot size, filesystem), so nothing is
-      duplicated.*
+      duplicated. *After v0.1.0 it was brought back to pmbootstrap parity with the sibling's later
+      fixes: p3 ends 33 sectors before the end of the device instead of 2048, a partition that is
+      mounted is refused instead of silently mishandled (`findmnt -rn -S <device>`, never
+      `mountpoint -q <device>`, which a device node never satisfies), `mkfs` gets `-q`, `partprobe`
+      runs after the `cgpt add`s, the partition below 512 MiB is refused and the fstab uses
+      pmbootstrap's options. Rehearsed on a loop device and by building an image from a fixture
+      rootfs (recon §12). None of this is in v0.1.0: `boot/` ships inside `omarchy-google-boot`, so
+      that package needs a rebuild — and a `pkgrel` bump before it is republished (plan §3 decision
+      7) — before a device gets it.*
 - [x] Port `boot/make-kpart.sh`: `depthchargectl build --board mt8192`, the vboot developer keys,
       hayato's DTB first, no duplicated `kern_guid`, a silent-by-default command line with a
       `KERNEL_CMDLINE_OVERRIDE` escape hatch for verbose boots. *Ported and verified from a built
@@ -522,7 +530,11 @@ markers under `/var/lib/omarchy-google/`, and a second run changes nothing.*
       explicitly, and `futility show` reporting `Body verification succeeded`. The device runs the
       same file: on the device it sources the packaged device-side lib instead of the build host's
       (`boot/lib.sh` here is a wrapper around `scripts/lib.sh`), which is what the package's tests
-      compare (recon §12).*
+      compare (recon §12).* *Its command line is joined with an explicit separator since the parity
+      pass (`printf '%s %s' … | tr -s ' ' | sed`): `tr '\n' ' '` over `kernel-cmdline.conf` produces a
+      separator only when that file ends with a newline, and without one `root=UUID=…` would be glued
+      to the last option — measured, and latent here only because the file does end with one (recon
+      §12).*
 - [x] Kernel command line from `devices/google-asurada/kernel-cmdline.conf` plus `root=UUID=…`
       resolved from the built rootfs, the way `debian-aarch64` resolves it. *Verified in the kpart
       that was built: `kern_guid=%U quiet loglevel=2 root=UUID=… rootwait rw` — the file carries
