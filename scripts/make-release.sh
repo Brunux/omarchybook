@@ -146,8 +146,8 @@ cat >"$PLATFORM_OUT/README.md" <<'EOF'
 # [platform], the bundle this port builds
 
 The packages Omarchy's own repositories cannot carry for this device: the kernel
-(`linux-omarchy-book`), the platform layers (`omarchy-google`,
-`omarchy-google-boot`), their `-dev` counterparts built from the pinned quattro
+(`linux-omarchy-book`), the platform layers (`omarchy-book`,
+`omarchy-book-boot`), their `-dev` counterparts built from the pinned quattro
 checkout, and `depthcharge-tools` (AUR only). Every package is signed with the
 key in `platform.pub`, which is the public half of the key every image of this
 port trusts (its private half never leaves the machine that built the image).

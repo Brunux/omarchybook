@@ -60,7 +60,11 @@ deliberate: each repo must build and release from its own HEAD.
 
 - Kernel package: **`linux-omarchy-book`** and `linux-omarchy-book-headers` (not
   `linux-omarchy`); `provides`/`conflicts` against the upstream kernel package.
-- Upstream platform family proposed: **`aarch64-google`** (via the `google,` device-tree prefix).
+- Platform packages: **`omarchy-book`** and **`omarchy-book-boot`** (dirs
+  `/usr/lib/omarchy/book{,-boot}`) — the platform brand, like upstream's
+  `aarch64-apple` → `omarchy-mac`/`omarchy-mac-boot`. Not `omarchy-google*`.
+- Upstream platform family proposed: **`aarch64-google`** (via the `google,` device-tree prefix);
+  the per-platform list stays `install/omarchy-aarch64-google.packages`.
 - Channel: **`edge` only** — the only channel publishing aarch64. Pinning policy holds nothing
   but `IgnorePkg` for `linux-omarchy*` plus versions recorded in `docs/recon.md`.
 
@@ -89,7 +93,7 @@ the patch and the proposal in sync and delete it once merged.
   byte-searched for the profiles' contents.
 - The installer (`boot/lib-cgpt.sh`, used by `write-sd.sh`, `install-emmc.sh`, `make-image.sh` and
   `restore-system.sh`) follows pmbootstrap's install path part by part, because that is the method
-  proven to boot on this machine — and it ships inside the `omarchy-google-boot` package, so a change
+  proven to boot on this machine — and it ships inside the `omarchy-book-boot` package, so a change
   here needs that package rebuilt (and a `pkgrel` bump, plan §3 decision 7) before a device sees it.
   Read recon §12 before changing it: the geometry (`- 33`, not `- 2048`), the mounted-partition
   refusal (`findmnt -rn -S <device>`, never `mountpoint -q <device>`), the partition resolution (by

@@ -1,0 +1,21 @@
+#!/bin/bash
+# Install the package's staged tree into $pkgdir.
+#
+# Two shapes: the files that ship as they are (etc/, share/, usr/, whose modes
+# the repository already carries) and the lifecycle entrypoints, which the
+# dispatcher only execs from a fixed path and mode -- a root-owned regular file
+# with no group/other write bits (docs/recon.md §11).
+set -euo pipefail
+
+destination=${1:?usage: install <pkgdir>}
+addon="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+for tree in etc usr; do
+	[ -d "$addon/$tree" ] || continue
+	install -d "$destination/$tree"
+	cp -a "$addon/$tree/." "$destination/$tree/"
+done
+
+for entrypoint in "$addon"/entrypoints/*; do
+	install -Dm755 "$entrypoint" "$destination/usr/lib/omarchy/book/${entrypoint##*/}"
+done

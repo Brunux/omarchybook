@@ -42,5 +42,5 @@ source:   https://chromium.googlesource.com/chromiumos/platform/vboot_reference/
 The keys are only developer-mode material and are not secrets, but the device
 still needs them where `depthchargectl` searches (`docs/recon.md` §7):
 `/usr/share/vboot/devkeys`. Shipping and placing them is part of the platform
-boot package (`omarchy-google-boot`, Phase 5), not of the upstream Omarchy
+boot package (`omarchy-book-boot`, Phase 5), not of the upstream Omarchy
 proposal.

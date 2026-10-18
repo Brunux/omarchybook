@@ -156,7 +156,7 @@ for recipe in "${recipes[@]}"; do
 	# A recipe may need files that live outside it. The boot chain is canonical
 	# in the repository's boot/ (plan §4: the canonical copy, consumed by
 	# scripts/), but the package that ships it to the device is
-	# platform/omarchy-google-boot; `extra.list` names those paths, one
+	# platform/omarchy-book-boot; `extra.list` names those paths, one
 	# repository-relative path per line, and they are staged under
 	# recipe/extra/ for the recipe's install step to pick up. They count towards
 	# the recipe's hash, so a change in boot/ rebuilds the package.

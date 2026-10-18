@@ -17,7 +17,7 @@ but every lifecycle operation is a no-op and hardware setup never runs.
 |---|---|
 | `bin/omarchy-hw-platform` | recognise the `google,` vendor prefix → `aarch64-google`; add it to the allowed-platform regex and the image-manifest mapping (`platform=google`); exclude it from the NVIDIA contradiction checks |
 | `bin/omarchy-hw-aarch64-google` | new platform-detection helper (mirrors `omarchy-hw-aarch64-apple`); the hardware leaves gate on it |
-| `bin/omarchy-lifecycle-dispatch` | register `aarch64-google`: `setup-boot` and `update-verify` **required** on `/usr/lib/omarchy/google-boot` (package `omarchy-google-boot`); `setup-system`, `setup-user`, `post-install`, `pre-remove` optional on `/usr/lib/omarchy/google` (package `omarchy-google`). Provisioning, factory reset and `luks-slots` stay no-ops (no LUKS) |
+| `bin/omarchy-lifecycle-dispatch` | register `aarch64-google`: `setup-boot` and `update-verify` **required** on `/usr/lib/omarchy/book-boot` (package `omarchy-book-boot`); `setup-system`, `setup-user`, `post-install`, `pre-remove` optional on `/usr/lib/omarchy/book` (package `omarchy-book`). Provisioning, factory reset and `luks-slots` stay no-ops (no LUKS) |
 | `bin/omarchy-pkg-defaults` | compose `install/omarchy-aarch64-google.packages` for the platform |
 | `install/omarchy-aarch64-google.packages` | new package list: `vboot-utils` (cgpt+crossystem+futility), `depthcharge-tools`, `keyd`, `alsa-ucm-conf`, `alsa-utils`, `pipewire-alsa`, `linux-firmware-mediatek`, `linux-firmware-realtek` |
 | `install/hardware/google/{firmware,audio,keyboard,boot}.sh` | new `aarch64-google`-gated leaves, wired into `install/hardware/all.sh` |
@@ -26,7 +26,7 @@ but every lifecycle operation is a no-op and hardware setup never runs.
 | `install/config/snapper.sh` | skip when `snapper` is not installed: the platform has no btrfs, so there is nothing to configure and the leaf would otherwise abort the install |
 | `etc/mkinitcpio.conf.d/00-omarchy-hooks.conf` | an `aarch64-google` machine's boot package owns its initramfs (the signed FIT is built from it), so the baseline leaves `HOOKS` alone like a platform-owned Mac, instead of asking for `plymouth`/`btrfs-overlayfs` hooks this boot chain does not use |
 
-The entrypoints themselves (`omarchy-google-boot`, `omarchy-google`) are **not**
+The entrypoints themselves (`omarchy-book-boot`, `omarchy-book`) are **not**
 part of this patch: like Apple's `omarchy-mac-boot`/`omarchy-mac`, they ship in
 the platform's own package (built here, published into the local `[platform]`
 bundle), so upstream takes only the registration.

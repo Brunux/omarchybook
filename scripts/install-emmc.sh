@@ -16,7 +16,7 @@
 # Ported from debian-aarch64 (docs/plan.md 2.5, 4). The differences are Arch's:
 # the boot chain it invokes is boot/make-kpart.sh, the filesystem it creates is
 # ext4 (plan 3.4), and the "after a kernel update" note at the end names this
-# port's mechanism (the ALPM hook / omarchy-google-boot kpart-rewrite) instead of
+# port's mechanism (the ALPM hook / omarchy-book-boot kpart-rewrite) instead of
 # Debian's install-kernel.sh + install-kpart.sh pair.
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
@@ -138,5 +138,5 @@ log "  This firmware shows a developer-mode menu instead of the Ctrl+D/Ctrl+U sc
 log "  'internal disk' is the eMMC, 'external disk' is the microSD. With the card out"
 log "  the internal one is the only choice; with the card in, pick it in the menu."
 log "  After a kernel update on the eMMC system, p1 is rewritten by the boot"
-log "  package's ALPM hook (or: omarchy-google-boot kpart-rewrite)."
+log "  package's ALPM hook (or: omarchy-book-boot kpart-rewrite)."
 cgpt show "$BLOCK"

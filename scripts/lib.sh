@@ -235,7 +235,7 @@ PLATFORM_KEY_FILE="${PLATFORM_KEY_FILE:-$BUILD_ROOT/keys/platform.pub}"
 
 # The upgrade path for a *published* image (plan Phase 6, docs/recon.md 9).
 # Omarchy's own post-install leaf rewrites /etc/pacman.conf and drops the
-# build-time [platform], so neither linux-omarchy-book nor omarchy-google can
+# build-time [platform], so neither linux-omarchy-book nor omarchy-book can
 # ever be updated on a device. A release publishes the bundle as a repository
 # (scripts/make-release.sh: platform/) and, when this is set to where that
 # directory is served, build-rootfs.sh writes the [platform] section back into

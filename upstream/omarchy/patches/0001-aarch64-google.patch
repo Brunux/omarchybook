@@ -142,13 +142,13 @@ index 5680cc6..1f810a6 100755
      )
      ;;
 +  aarch64-google:setup-system | aarch64-google:setup-user | aarch64-google:post-install | aarch64-google:pre-remove)
-+    implementation=/usr/lib/omarchy/google
-+    package=omarchy-google
++    implementation=/usr/lib/omarchy/book
++    package=omarchy-book
 +    required=()
 +    ;;
 +  aarch64-google:*)
-+    implementation=/usr/lib/omarchy/google-boot
-+    package=omarchy-google-boot
++    implementation=/usr/lib/omarchy/book-boot
++    package=omarchy-book-boot
 +    required=(
 +      update-verify
 +      setup-boot
@@ -255,7 +255,7 @@ index 0000000..d9471a2
 +# A Chrome OS device boots a signed depthcharge FIT from the GPT partition whose
 +# PARTUUID equals the `kern_guid` in the kernel command line. Ensuring that
 +# partition holds the current kernel is the platform boot package's setup-boot
-+# entrypoint (omarchy-google-boot, resolved from kern_guid); this leaf only
++# entrypoint (omarchy-book-boot, resolved from kern_guid); this leaf only
 +# guarantees the tools it needs are present.
 +if omarchy-hw-aarch64-google; then
 +  omarchy-pkg-add vboot-utils depthcharge-tools
@@ -378,5 +378,5 @@ index 0000000..67422d1
 +# platform repository (Apple's omarchy-mac-pkgs is the model). A Chrome OS
 +# device boots a signed FIT from its GPT kernel partition and no generic path
 +# can drive that, so the platform owns the boot chain too.
-+omarchy-google
-+omarchy-google-boot
++omarchy-book
++omarchy-book-boot

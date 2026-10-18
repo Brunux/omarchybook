@@ -35,7 +35,7 @@
 #
 # Ported from debian-aarch64 (docs/plan.md 2.5, 4). Ported as logic, not as text:
 # the kernel-update note in the README names this port's mechanism (the boot
-# package's ALPM hook / omarchy-google-boot kpart-rewrite) and the exclusion list
+# package's ALPM hook / omarchy-book-boot kpart-rewrite) and the exclusion list
 # is Arch's paths, not Debian's.
 #
 # sgdisk (Arch: gptfdisk) is optional but without it the GPT is only recorded as
@@ -219,8 +219,8 @@ what that script does, kept for reference.
 
 On a system installed by this port, a kernel update is completed for you: the
 boot package's ALPM hook rebuilds p1 from the installed kernel the moment the
-kernel package changes (\`99-omarchy-kpart.hook\` -> \`omarchy-google-boot
-kpart-rewrite\`), and \`omarchy-google-boot update-verify\` proves p1 still holds
+kernel package changes (\`99-omarchy-kpart.hook\` -> \`omarchy-book-boot
+kpart-rewrite\`), and \`omarchy-book-boot update-verify\` proves p1 still holds
 a signed FIT for the running release.
 EOF
 

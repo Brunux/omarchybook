@@ -23,7 +23,7 @@ Hayato, with:
 1. **our kernel** (mainline 7.2.7 plus the MT8192 patches that already boot this machine);
 2. **our boot chain** (ChromeOS GPT plus a signed depthcharge FIT in the kernel partition), because
    the Hayato has no UEFI and Omarchy's aarch64 path is UEFI + GRUB/Limine;
-3. **our device layer** (the `aarch64-google` platform package, `platform/omarchy-google/`: keyd for
+3. **our device layer** (the `aarch64-google` platform package, `platform/omarchy-book/`: keyd for
    a keyboard with no F1–F10, the ALSA UCM boot sequence, the backlight udev rule, RTW88 firmware,
    zram);
 4. reproducible artifacts built **away from the device**: a bootable microSD image, a rootfs
@@ -202,23 +202,34 @@ Device knowledge that must not be lost in the port (each item cost hardware debu
 
 ### Naming
 
-- Repository and working directory: `~/Dev/omarchybook` (as requested).
+- Repository and working directory: `~/Dev/omarchybook` (as requested). The project's own brand is
+  **`book`** — the repository name and the kernel's flavor.
 - Kernel: `linux-omarchy-book` and `linux-omarchy-book-headers` (flavor `omarchy-book`, confirmed).
+- Platform packages: **`omarchy-book`** and **`omarchy-book-boot`** — the aarch64-google runtime and
+  boot layers, installed at `/usr/lib/omarchy/book{,-boot}` by the dispatcher in the vendored patch.
 - Device directory: `devices/google-asurada/` (board codename, matching `debian-aarch64`).
-- Upstream platform family: `aarch64-google`.
+- Upstream platform family: `aarch64-google` (the `google,` device-tree vendor prefix).
 
-**TODO — rename the kernel's naming from `google` to `mt81`** (asked for on 2026-10-17, before
-anything is renamed). The kernel itself already carries the SoC: `kernels/mediatek-mt81`, release
-`7.2.7-mt81`, `linux-omarchy-book`. What still says `google` is everything around it: the device
-directory (`devices/google-asurada/`), which is also what names every asset the release publishes
-(`google-asurada.img.xz`, `google-asurada.vmlinuz.kpart`, `google-asurada-rootfs.tar.zst`), the
-platform family `aarch64-google` and its packages (`omarchy-google`, `omarchy-google-boot`), the
-payload directory `/usr/lib/omarchy/google-boot/`, and the `google,` device-tree prefix the detector
-keys on. Two of those are deliberately tied to names that are not ours to choose —
-`aarch64-google` is what the vendored upstream patch proposes (a `google,` prefix is what the device
-tree answers) and `devices/google-asurada/` matches the sibling repository — so the rename has to
-decide which of the two layers moves: the artifacts (a `deviceinfo` basename, no upstream effect) or
-the platform (a different family name, and the patch with it).
+**Resolved — the platform's naming is `book`, neither the vendor nor the SoC** (raised 2026-10-17,
+settled the same day). Two facts set it. First, upstream names a platform's *packages* after the
+platform, not the device-tree vendor: `aarch64-apple` resolves to `omarchy-mac` and `omarchy-mac-boot`
+under `/usr/lib/omarchy/mac{,-boot}`, while the family and the per-platform install list
+(`omarchy-aarch64-apple.packages`) stay vendor-based. Second, this repository's brand is already
+`book`: it is `omarchybook`, and the kernel is `linux-omarchy-book`. So the platform layer takes the
+kernel's own brand — `omarchy-book` / `omarchy-book-boot`, previously `omarchy-google` /
+`omarchy-google-boot` — and `linux-omarchy-book` + `omarchy-book` + `omarchy-book-boot` read as one
+family, exactly the shape of `linux-omarchy` + `omarchy-mac` + `omarchy-mac-boot`.
+
+What deliberately did **not** move is the layer that is not ours to name: the family `aarch64-google`
+(what the vendored upstream patch registers and what the `google,` prefix answers), the per-platform
+list `install/omarchy-aarch64-google.packages`, the detector `bin/omarchy-hw-aarch64-google` and the
+`install/hardware/google/` leaf directory. Nor did the device directory: `devices/google-asurada/` is
+the board codename, matching `debian-aarch64` and pmaports, and the Mac packages keep pmaports board
+codenames too, so the release assets stay `google-asurada.*`. The SoC name likewise stays where a SoC
+belongs — `kernels/mediatek-mt81` and the release `7.2.7-mt81` — rather than being stamped on a
+family-wide platform package. Upstream does use SoC-named *families* (`aarch64-n1x`, `aarch64-gb10`),
+but adopting that here would rewrite the detector rule and the proposal itself, which is the one
+thing the vendor-prefix family exists to avoid.
 
 ---
 
@@ -238,12 +249,12 @@ omarchybook/
                               packages installed explicitly; the desktop set
                               itself is composed from the runtime's own lists),
                               aarch64-filter.list (x86-only drops and substitutions)
-  platform/omarchy-google/    the aarch64-google runtime layer, the role upstream
+  platform/omarchy-book/      the aarch64-google runtime layer, the role upstream
                               gives omarchy-mac-pkgs: PKGBUILD, the setup-system
                               entrypoint and script, the keyd map, the backlight
                               udev rule, the journald drop-in and the
                               /usr/share/omarchy-platform data
-  platform/omarchy-google-boot/
+  platform/omarchy-book-boot/
                               the boot-chain half: the setup-boot and
                               update-verify entrypoints, the command they share,
                               and — through extra.list — the boot/ scripts, the
@@ -258,7 +269,7 @@ omarchybook/
                               lib.sh, 99-omarchy-kpart.hook, devkeys/ (the ALARM
                               vboot-utils carries none); the canonical boot-chain
                               copy, consumed by scripts/ and shipped to the
-                              device by platform/omarchy-google-boot. The
+                              device by platform/omarchy-book-boot. The
                               scripts source a lib beside themselves, so the same
                               files work in a checkout and on an installed
                               system, where the package replaces lib.sh with its
@@ -364,8 +375,8 @@ waits on hardware.*
       `microcode` hook skipping the architecture — none the `mali_csffw.bin` one.*
 - [x] ALPM hook: after a kernel or initramfs change, rebuild and write the kpart — the Arch
       counterpart of the Debian sequence `install-kernel.sh` then `install-kpart.sh` — backing up
-      what it replaces. *`boot/99-omarchy-kpart.hook`, shipped by `omarchy-google-boot`, fires on
-      the kernel package or on `boot/vmlinuz-*`/`boot/dtbs/*` and runs `omarchy-google-boot
+      what it replaces. *`boot/99-omarchy-kpart.hook`, shipped by `omarchy-book-boot`, fires on
+      the kernel package or on `boot/vmlinuz-*`/`boot/dtbs/*` and runs `omarchy-book-boot
       kpart-rewrite`, which is Phase 5's `install-kpart.sh` with `CONFIRM=yes`. Two `[Trigger]`
       sections because pacman keeps the last value of a repeated key, and numbered 99 so it lands
       after mkinitcpio's `90-mkinitcpio-install.hook` — the FIT then embeds the regenerated
@@ -448,7 +459,7 @@ hardware stays reachable.*
       — after the post-install leaf writes Omarchy's own `pacman.conf` in its place.
 
 **Acceptance:** `omarchy-hw-platform` prints `aarch64-google`, from the manifest and from a
-`google,asurada` device tree; `setup-boot`/`update-verify` resolve to `omarchy-google-boot` and stop
+`google,asurada` device tree; `setup-boot`/`update-verify` resolve to `omarchy-book-boot` and stop
 at "it is not installed" (exit 3 until the boot package of Phase 5 provides them), while
 `setup-system` and `setup-user`
 succeed; only `linux-omarchy-book` provides the kernel, `snapper`/`btrfs-progs`/`limine*` are absent,
@@ -470,7 +481,7 @@ and `omarchy-version` reports `4.0.0.r7026.g51bfd1d-1`.
       the top row for F1–F10, the `cros_ec_buttons`/jack exclusions **before** the generic
       `k:0000:0000` entry, and the Lock key left alone but bound to the locker via `XF86Sleep`).
       Package it as part of the `google` platform leaf so upstream can take it too. *The map and its
-      exclusions are `platform/omarchy-google/etc/keyd/default.conf`, ported verbatim from the
+      exclusions are `platform/omarchy-book/etc/keyd/default.conf`, ported verbatim from the
       hardware-verified Debian sibling (its `ORIGINS.md` records what changed); the leaf enables the
       unit, which otherwise ships disabled. The Lock key is left alone so logind keeps suspending on
       it, and no session binding is needed: Omarchy's shell locks the session while it sleeps
@@ -490,21 +501,21 @@ and `omarchy-version` reports `4.0.0.r7026.g51bfd1d-1`.
       `displays.conf` and `audio.json` are deliberately left out until the hardware run shows a
       need — there is no evidence of a second backlight device to prefer or of a node worth hiding,
       and both readers tolerate a missing file.*
-- [x] The `omarchy-google` package: it owns those files, the keyd configuration, the brightnessctl
+- [x] The `omarchy-book` package: it owns those files, the keyd configuration, the brightnessctl
       udev rule and the vendor drop-ins (`/usr/lib/udev`, `/usr/lib/systemd`, …), and its
       `setup-system` leaf (the `aarch64-google` implementation) applies the quirks idempotently.
       *Built by `scripts/build-package.sh` into `[platform]` and signed like everything else;
-      `provides=omarchy-platform`, `groups=omarchy-platform-google`, named as upstream's Apple
-      implementation names itself, so a merged proposal needs no renames. The boot half is Phase 5's
-      `omarchy-google-boot`. It is registered in the vendored patch's
+      `provides=omarchy-platform`, `groups=omarchy-platform-book`, named the way upstream's Apple
+      implementation names its own (the platform brand, not the vendor; plan §3 Naming). The boot
+      half is Phase 5's `omarchy-book-boot`. It is registered in the vendored patch's
       `install/omarchy-aarch64-google.packages` (the gap recon §11 found) and in the device list, so
       the image installs it.*
 
 **Acceptance:** WiFi, Bluetooth, speaker, suspend on lid/power/Lock key and the backlight keys all
 work on the booted image, verified by the hardware run in Phase 7. *What the chroot already proves:
-the image installs `omarchy-google` from the signed bundle, `omarchy-lifecycle-dispatch setup-system`
+the image installs `omarchy-book` from the signed bundle, `omarchy-lifecycle-dispatch setup-system`
 resolves to its entrypoint and enables keyd, adds the desktop users to `video` and writes its
-markers under `/var/lib/omarchy-google/`, and a second run changes nothing.*
+markers under `/var/lib/omarchy-book/`, and a second run changes nothing.*
 
 ### Phase 5 — Boot chain
 
@@ -525,7 +536,7 @@ markers under `/var/lib/omarchy-google/`, and a second run changes nothing.*
       of 16 attaches pointed the root filesystem at `p2`; that resolution is by partition number and
       label-checked now (the sibling still has the positional version). Rehearsed on a loop device and
       by building an image from a fixture rootfs (recon §12). None of this is in v0.1.0: `boot/` ships inside
-      `omarchy-google-boot`, so that package needs a rebuild — and a `pkgrel` bump before it is
+      `omarchy-book-boot`, so that package needs a rebuild — and a `pkgrel` bump before it is
       republished (plan §3 decision 7) — before a device gets it. Deferred to the next rootfs build
       by the maintainer's call on 2026-10-17.*
 - [x] Port `boot/make-kpart.sh`: `depthchargectl build --board mt8192`, the vboot developer keys,
@@ -547,11 +558,11 @@ markers under `/var/lib/omarchy-google/`, and a second run changes nothing.*
       device `install-kpart.sh` reads the UUID with `findmnt`/`blkid`; for an image it comes from the
       built rootfs). `KERNEL_CMDLINE_OVERRIDE` is the verbose escape hatch.*
 - [x] An `install-kpart.sh` equivalent, with backup and `CONFIRM=yes`. *`boot/install-kpart.sh`,
-      shipped in `omarchy-google-boot` and reachable as `omarchy-google-boot setup-boot` and
+      shipped in `omarchy-book-boot` and reachable as `omarchy-book-boot setup-boot` and
       `kpart-rewrite`. It resolves p1 from `kern_guid`, refuses a partition that is not a ChromeOS
       kernel partition, builds the FIT from the running system (`ROOTFS=/`,
       `KERNEL_RELEASE=$(uname -r)`), checks that it fits and verifies, backs the old p1 up to
-      `/var/lib/omarchy-google-boot/` before writing, and re-reads the result with `futility show`.
+      `/var/lib/omarchy-book-boot/` before writing, and re-reads the result with `futility show`.
       Without `CONFIRM=yes` it prints the plan and stops. The write itself is Phase 7; off-device it
       is refused by the chroot guard, which is verified (recon §12).*
 
@@ -594,7 +605,7 @@ Phase 7's.*
       machine is reachable before the passwords change; the release notes carry it and Phase 7's
       `check-system.sh` asserts it. The sweep for everything else is done (above and recon §13).*
 - [x] An upgrade path for the bundle. The image configures no `[platform]` repository, so neither
-      `linux-omarchy-book` nor `omarchy-google` can ever be updated on a device (recon §9); decide
+      `linux-omarchy-book` nor `omarchy-book` can ever be updated on a device (recon §9); decide
       whether a release publishes the bundle as a repository the image trusts, and give a
       republished package — same version, new bytes, because a recipe or the vendored patch changed —
       a version bump so an installed machine can actually move to it. *Decided: a release publishes
@@ -680,7 +691,7 @@ acceptance asks for.*
       package list, platform data — with its reasoning and the hardware it was verified on.
 - [ ] A PR to `omacom/omarchy` (detection, dispatch, `install/hardware/google/*`,
       `install/omarchy-aarch64-google.packages`, `/usr/share/omarchy-platform/*` owned by
-      `omarchy-google`) and, if the manifests need it, one to `omacom/omarchy-iso` adding `google` as
+      `omarchy-book`) and, if the manifests need it, one to `omacom/omarchy-iso` adding `google` as
       a platform name.
 - [ ] Once merged, delete the vendored patch: the repository keeps building from stock Omarchy.
 
@@ -708,7 +719,7 @@ Patch surface:
 | `bin/omarchy-lifecycle-dispatch` | register the `aarch64-google` operations: `setup-boot`, `setup-system`, `update-verify`, `post-install`, and whatever Phase 0 shows is mandatory |
 | `install/hardware/google/` | `boot.sh` (ChromeOS GPT plus the signed kpart, resolved from `kern_guid` and the device tree), `firmware.sh` (MediaTek/RTW88), `keyboard.sh` (keyd), `audio.sh` (UCM) |
 | `install/omarchy-aarch64-google.packages` | `cgpt`, `vboot-utils`, `depthcharge-tools`, `keyd`, `alsa-ucm-conf` and friends, named like `omarchy-aarch64-apple.packages` |
-| `/usr/share/omarchy-platform/` | flat, owned by `omarchy-google`: `displays.conf`, `audio.json`, `key-names` (no per-platform subdirectory — recon §11) |
+| `/usr/share/omarchy-platform/` | flat, owned by `omarchy-book`: `displays.conf`, `audio.json`, `key-names` (no per-platform subdirectory — recon §11) |
 
 While the PR is open the patch lives in `upstream/omarchy/patches/` with a `series` file and is
 applied by `build-rootfs.sh`. The patch *is* the proposal, so the two cannot drift.
@@ -758,7 +769,7 @@ Still open:
 2. `docs/plan.md` (this document) and `docs/recon.md` (the evidence already gathered in §2).
 3. `devices/google-asurada/` — `deviceinfo` translated, `kernel-cmdline.conf`, `modules-initfs`,
    `packages.list` and `PROVENANCE.md`. The platform implementation is *not* here but in
-   `platform/omarchy-google/` (Phase 4): it is keyed to the `google` family, not to this board.
+   `platform/omarchy-book/` (Phase 4): it is keyed to the `google` family, not to this board.
 4. `kernels/mediatek-mt81/` vendored with its `version`, `config.aarch64` and `patches/series`,
    with a provenance note pointing at `debian-aarch64`.
 5. `boot/lib-cgpt.sh`, `boot/make-kpart.sh` and `boot/install-kpart.sh` ported, with the

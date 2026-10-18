@@ -22,7 +22,7 @@
 # Ported from debian-aarch64 (docs/plan.md §2.5). The paths are Arch's
 # (vboot-utils' futility, util-linux's findfs/lsblk/findmnt), the scripts source
 # their lib from beside themselves so the packaged copy works on the device, and
-# the ALPM hook (boot/99-omarchy-kpart.hook via `omarchy-google-boot
+# the ALPM hook (boot/99-omarchy-kpart.hook via `omarchy-book-boot
 # kpart-rewrite`) is this same script with CONFIRM=yes -- that is the trigger the
 # Debian side had in install-kernel.sh. The chroot guard it inherited did not
 # work and lives in lib-cgpt.sh now (docs/recon.md §12).

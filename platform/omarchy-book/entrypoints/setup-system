@@ -1,0 +1,11 @@
+#!/bin/bash -p
+# omarchy-lifecycle-dispatch setup-system -- the aarch64-google platform's
+# side of the operation.
+#
+# The dispatcher execs this file directly and trusts it by shape, not by
+# content: root-owned, a regular file, no group/other write bits. So it stays
+# trivial and the work lives in /usr/bin/omarchy-book-setup-system, which can
+# also be run by hand (docs/recon.md §11).
+set -euo pipefail
+
+exec /usr/bin/omarchy-book-setup-system "$@"

@@ -10,7 +10,7 @@ hardware) and replaces only the distribution: Arch Linux ARM + Omarchy instead o
 hand-written sway UI.
 
 - **Status:** phases 0–6 of the plan are done as far as an off-device build can take them. The
-  kernel (`linux-omarchy-book`) and both platform packages (`omarchy-google`, `omarchy-google-boot`)
+  kernel (`linux-omarchy-book`) and both platform packages (`omarchy-book`, `omarchy-book-boot`)
   build and publish into a signed `[platform]` bundle outside the repository, a rootfs builds and
   installs from it, and `scripts/` writes a card (`write-sd.sh`), an image and a release
   (`make-image.sh`, `make-release.sh`, with the bundle published as a repository), installs it to the

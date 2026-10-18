@@ -1,0 +1,12 @@
+# Let the video group change the LCD backlight, so the unprivileged session can
+# run `brightnessctl` -- which is what Omarchy's XF86MonBrightness{Down,Up}
+# bindings call (default/hypr/bindings/media.lua).
+#
+# Neither Debian's nor Arch's brightnessctl package ships this rule, and nothing
+# else in the system touches /sys/class/backlight, so the brightness file stays
+# root-only (0644) and `brightnessctl set` fails with "Permission denied" for
+# the session user. This is the rule upstream brightnessctl installs.
+#
+# Group membership is the other half: setup-system puts the desktop user in
+# video (see usr/bin/omarchy-book-setup-system).
+ACTION=="add", SUBSYSTEM=="backlight", RUN+="/bin/chgrp video /sys/class/backlight/%k/brightness", RUN+="/bin/chmod g+w /sys/class/backlight/%k/brightness"

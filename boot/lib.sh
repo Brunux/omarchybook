@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # The boot-chain scripts in this directory source a lib that sits beside them
-# (make-kpart.sh, install-kpart.sh), because platform/omarchy-google-boot ships
+# (make-kpart.sh, install-kpart.sh), because platform/omarchy-book-boot ships
 # those same files to the device, where lib.sh is the packaged device-side one
 # instead of the build host's.
 #

@@ -89,7 +89,7 @@ Platform package-list convention: `install/omarchy-<platform>.packages`, e.g. `o
 `omarchy-aarch64-apple.packages`, `omarchy-aarch64-qualcomm.packages`. Ours would be
 `install/omarchy-aarch64-google.packages`. Apple's implementation dirs are `/usr/lib/omarchy/mac-boot`
 (package `omarchy-mac-boot`, its boot operations) and `/usr/lib/omarchy/mac` (package `omarchy-mac`,
-`setup-system`/`setup-user`/`post-install`/`pre-remove`) — the model for `google-boot` / `google`.
+`setup-system`/`setup-user`/`post-install`/`pre-remove`) — the model for `book-boot` / `book`.
 
 ## 3. Do `omarchy` / `omarchy-settings` depend on `linux-omarchy`? — **No**
 
@@ -405,22 +405,24 @@ to `aarch64-google`, and `bin/omarchy-lifecycle-dispatch` registers
 
 | operation | implementation dir | package |
 |---|---|---|
-| `setup-system`, `setup-user`, `post-install`, `pre-remove` | `/usr/lib/omarchy/google` | `omarchy-google` |
-| `setup-boot`, `update-verify` (**required**) | `/usr/lib/omarchy/google-boot` | `omarchy-google-boot` |
+| `setup-system`, `setup-user`, `post-install`, `pre-remove` | `/usr/lib/omarchy/book` | `omarchy-book` |
+| `setup-boot`, `update-verify` (**required**) | `/usr/lib/omarchy/book-boot` | `omarchy-book-boot` |
 
-with `groups=('omarchy-platform-google')` and `provides=('omarchy-platform')` on the first one.
-**A gap in the patch, copied from Apple's asymmetry**: `install/omarchy-aarch64-google.packages`
-lists the *dependencies* (`keyd`, `alsa-ucm-conf`, `alsa-utils`, `pipewire-alsa`, `vboot-utils`,
-`depthcharge-tools`, `linux-firmware-mediatek`, `linux-firmware-realtek`) but **not** the two
-platform packages — Apple's list names `omarchy-mac` and `omarchy-mac-boot`. Without adding them,
-nothing pulls the platform packages in and `setup-boot`/`update-verify` answer exit 3 forever.
+with `groups=('omarchy-platform-book')` and `provides=('omarchy-platform')` on the first one.
+**A gap in the patch, copied from Apple's asymmetry, was found and closed**:
+`install/omarchy-aarch64-google.packages` originally listed only the *dependencies* (`keyd`,
+`alsa-ucm-conf`, `alsa-utils`, `pipewire-alsa`, `vboot-utils`, `depthcharge-tools`,
+`linux-firmware-mediatek`, `linux-firmware-realtek`) and **not** the two platform packages — Apple's
+list names `omarchy-mac` and `omarchy-mac-boot`. Without them, nothing pulls the platform packages in
+and `setup-boot`/`update-verify` answer exit 3 forever. The patch now ends the list with
+`omarchy-book` and `omarchy-book-boot`.
 
 **The leaf contract.** The dispatcher only execs an entrypoint that is a regular executable file
 (never a symlink anywhere on the path to `/`), root-owned, with `(mode & 022) == 0` — so
 `#!/bin/bash -p` and `install -Dm755`, which is what the mac `install` script does for every file in
 `entrypoints/`. A leaf: rejects bad arguments with `exit 2`; re-checks the platform and **exits 0**
 silently when it is not `aarch64-google`; is idempotent through negative-guard **marker files**
-(never blind writes), e.g. a marker under `/var/lib/omarchy-google/` guarded by `[[ ! -f $marker ]]`;
+(never blind writes), e.g. a marker under `/var/lib/omarchy-book/` guarded by `[[ ! -f $marker ]]`;
 preserves an administrator's override (an `/etc` override or a mask means "leave it"); and lets
 failures propagate (`set -e`).
 
@@ -445,10 +447,10 @@ step because systemd/udev/NetworkManager read the vendor path directly.
 
 **Verified in a built rootfs (Phase 4).** The reader takes the flat path literally —
 `key_names_file=/usr/share/omarchy-platform/key-names` in `bin/omarchy-menu-keybindings` — so the
-platform package installs there and not under a per-platform directory. With `omarchy-google`
+platform package installs there and not under a per-platform directory. With `omarchy-book`
 installed in a built image, `omarchy-lifecycle-dispatch setup-system image-first-boot` exits 0,
 enables `keyd` (symlink in `/etc/systemd/system/multi-user.target.wants/`), adds the `wheel` members
-to `video` and writes its markers into `/var/lib/omarchy-google/`; a second run writes nothing.
+to `video` and writes its markers into `/var/lib/omarchy-book/`; a second run writes nothing.
 `systemctl enable` works offline, in an image build, while `start` is guarded by
 `/run/systemd/system`. The leaf uses "members of `wheel`" as its notion of the desktop user because
 a Chrome OS image has no better marker; on an image built from ALARM's tarball that is both the
@@ -457,11 +459,11 @@ in plan Phase 6.
 
 ## 12. The boot chain, ported and shipped (Phase 5)
 
-**What ships, and where the files live.** `platform/omarchy-google-boot/` carries the two operations
+**What ships, and where the files live.** `platform/omarchy-book-boot/` carries the two operations
 the dispatcher requires of this platform (`setup-boot`, `update-verify`), the command they share
-(`/usr/bin/omarchy-google-boot`, with a third subcommand `kpart-rewrite` for the ALPM hook), the
+(`/usr/bin/omarchy-book-boot`, with a third subcommand `kpart-rewrite` for the ALPM hook), the
 ALPM hook itself, and the boot chain: `lib-cgpt.sh`, `make-kpart.sh` and `install-kpart.sh` under
-`/usr/lib/omarchy/google-boot/`, with the devkeys and the `deviceinfo`/`kernel-cmdline.conf` the
+`/usr/lib/omarchy/book-boot/`, with the devkeys and the `deviceinfo`/`kernel-cmdline.conf` the
 device-side configuration derives from. None of those is a copy kept in the package: the recipe
 lists them in `extra.list`, and `scripts/build-package.sh` stages the paths it names under
 `recipe/extra/`, counting them towards the recipe's hash — so editing `boot/` or the device files
@@ -505,7 +507,7 @@ it after), the guard skipped the write, and pacman exited 0. `setup-boot` and `u
 the opposite: they only make sense on a booted system, so both refuse in a chroot rather than
 report about the host.
 
-**The command's own platform check reported a verdict it had not made.** `omarchy-google-boot`
+**The command's own platform check reported a verdict it had not made.** `omarchy-book-boot`
 refuses to act on a machine that is not `aarch64-google`. The first version called
 `omarchy-hw-aarch64-google` bare and treated *any* failure as "not Google", so a build log said `not
 an aarch64-google machine` about an aarch64-google image, with two unrelated causes it could not tell
@@ -564,7 +566,7 @@ and `build-rootfs.sh` refreshes the cache from it.
 **Verified end to end inside a rebuilt rootfs.** After `scripts/build-rootfs.sh` — which now pulls
 `dtc`, `uboot-tools`, `python-packaging` and `vboot-utils` in through the recipe's dependencies, with
 no manual step — the *device's* copy of the chain builds a FIT from the image it is installed in:
-`/usr/lib/omarchy/google-boot/make-kpart.sh / /tmp/kpart.img "root=UUID=… rootwait rw"` exits 0 and
+`/usr/lib/omarchy/book-boot/make-kpart.sh / /tmp/kpart.img "root=UUID=… rootwait rw"` exits 0 and
 writes 30 MiB, `futility show` reports `Header version: 2.2`, `Body verification succeeded` and the
 flags `!DEV DEV !REC`, and `mt8192-asurada-hayato-r1.dtb` is the first DTB in the image. That is
 phase 1's acceptance re-run through the files the package ships, on the python the device runs,

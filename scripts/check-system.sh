@@ -238,10 +238,10 @@ if have pacman-key; then
 		*) fail "the [platform] signing key is not trusted: nothing from [platform] (the kernel included) can be verified; re-add it with pacman-key --add/platform.pub and --lsign-key" ;;
 	esac
 fi
-if [ -f /usr/lib/systemd/journald.conf.d/10-omarchy-google.conf ]; then
-	ok "the omarchy-google journald drop-in is installed (the journal is capped)"
+if [ -f /usr/lib/systemd/journald.conf.d/10-omarchy-book.conf ]; then
+	ok "the omarchy-book journald drop-in is installed (the journal is capped)"
 else
-	warn "the omarchy-google journald drop-in is missing"
+	warn "the omarchy-book journald drop-in is missing"
 fi
 
 # ---------------------------------------------------------------------------
