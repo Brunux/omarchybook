@@ -16,6 +16,16 @@ building, the `[platform]` keyring, and a home that was never seeded from `/etc/
 found three in the report itself, and a kept report with no FAIL is what Phase 7's acceptance still
 waits for.
 
+**v0.1.0 is published** (this repository's Releases, tag `v0.1.0`) with the notes in
+`docs/releases/v0.1.0.md`; what validates it is the third card's report, whose one FAIL was the
+report's own probe (recon §14). Building a release again wants about **25 GiB of working disk** —
+the rootfs, the image and `lib-dist.sh`'s staging copy exist at once — and both the image and the
+rootfs tarball come out over the **2 GiB a file in a GitHub release may be**, so they ship as 1800
+MiB parts (`<name>.part-aa`, …): reassemble with `cat <name>.part-* > <name>` and check against
+`SHA256SUMS`, which hashes the whole file. Three things the first real build got wrong are fixed
+(recon §13): the raw `.img` is neither published nor listed in `SHA256SUMS`, and `RELEASE-INFO.txt`
+reads the commit and the tag together, pinned to the same commit.
+
 Two Phase 6 decisions are easy to undo by accident: a release also publishes the bundle as a
 repository (`platform/`) and an image takes it only when `PLATFORM_REPO_URL` is set, and a package
 that a release already carries gets a `pkgrel` bump before it is republished. ALARM's `alarm`
