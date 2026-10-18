@@ -16,9 +16,14 @@ building, the `[platform]` keyring, and a home that was never seeded from `/etc/
 found three in the report itself, and a kept report with no FAIL is what Phase 7's acceptance still
 waits for.
 
-**v0.1.0 is published** (this repository's Releases, tag `v0.1.0`) with the notes in
-`docs/releases/v0.1.0.md`; what validates it is the third card's report, whose one FAIL was the
-report's own probe (recon §14). Building a release again wants about **25 GiB of working disk** —
+**v0.1.1 is published** (this repository's Releases, tag `v0.1.1`) with the notes in
+`docs/releases/v0.1.1.md`: the release that carries the platform rename to `omarchy-book` /
+`omarchy-book-boot`, the installer the device ships following pmbootstrap's path, and the two `-dev`
+packages at `pkgrel=2`. `build-omarchy.sh`'s rebuild stamp hashes the vendored recipes as well as
+the commit and the patch, so that bump is not skipped. v0.1.0's three-card validation — and the one
+FAIL that was the report's own probe (recon §14) — was of the image *that* release carried; no card
+has booted v0.1.1 yet, so the report that confirms the rename and the installer fix is still what
+Phase 7's acceptance waits for. Building a release again wants about **25 GiB of working disk** —
 the rootfs, the image and `lib-dist.sh`'s staging copy exist at once — and both the image and the
 rootfs tarball come out over the **2 GiB a file in a GitHub release may be**, so they ship as 1800
 MiB parts (`<name>.part-aa`, …): reassemble with `cat <name>.part-* > <name>` and check against
