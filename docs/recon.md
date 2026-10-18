@@ -754,6 +754,28 @@ and the tag at the end, so a commit made during the 40-minute build moved HEAD o
 the raw GPT dumps only -- a restore onto a disk of the same size works with those, and the portable
 `<host>-gpt.bin` (the way onto a different disk) needs the package installed.
 
+**`install-emmc.sh` inherits the sibling's eMMC fix.** The sibling installed its running system onto
+the eMMC and the machine did not boot it: the kernel partition and its payload were byte-identical to
+the card's, and the firmware did load the kernel, so it read as firmware or kernel -- what was on
+screen said what it was: `run-init: opening console: No such file or directory` (six times),
+`Target filesystem doesn't have requested /sbin/init`, `No init found. Try passing init= bootarg.`
+The excludes passed to rsync are about *contents*, but rsync also drops the excluded *directories*,
+and `/dev`, `/proc`, `/sys`, `/run`, `/mnt` and `/media` are the mount points the initramfs's
+run-init moves its own devtmpfs into before handing over to systemd, so the copy came out without
+them. `install-emmc.sh` now recreates them after the copy (`install -d` with the running system's
+modes) and refuses to write p1 unless `/dev` exists and `/sbin/init` resolves: a rootfs that cannot
+be entered must never reach the kernel partition, because the next reboot dies without a console to
+say why. The same fix makes the copy its own machine -- `: >` on `/etc/machine-id` and removal of
+`/etc/ssh/ssh_host_*`, exactly what `lib-dist.sh` does for a published artifact, with systemd
+generating a fresh id and `sshdgenkeys.service` the host keys at the first boot -- forwards `CONFIRM`
+through the `sudo -n` re-exec (which starts from a clean environment and had been dropping it, so the
+documented `CONFIRM=yes scripts/install-emmc.sh` could never pass the guard), and names the firmware
+menu (`internal disk` is the eMMC, `external disk` the microSD) instead of Ctrl+U in its closing
+message. The companion fix carries the same `CONFIRM` (and `DEVICE`) through the `sudo -n` re-exec of
+`boot/install-kpart.sh`, whose guard asks for `CONFIRM=yes` in its own error message and had been
+unreachable the same way. Ported from the sibling, where the eMMC install was verified on hardware
+and reaches the desktop; on this port the eMMC boot is Phase 7's.
+
 ## 14. The health report, and what it had to learn about the port (Phase 7)
 
 `scripts/check-system.sh` is the Phase 6 checker from `debian-aarch64` ported to Arch and re-derived
