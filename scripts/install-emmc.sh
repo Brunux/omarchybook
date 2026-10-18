@@ -26,10 +26,14 @@ set -euo pipefail
 BLOCK="${DEVICE_BLOCK:-/dev/mmcblk0}"
 
 if [ "$(id -u)" -ne 0 ]; then
+	# CONFIRM has to be forwarded explicitly: sudo -n starts from a clean
+	# environment, so without it the documented `CONFIRM=yes scripts/install-emmc.sh`
+	# reached the guard with CONFIRM unset and the guard could never pass.
 	exec sudo -n \
 		BUILD_ROOT="$BUILD_ROOT" WORK_DIR="$WORK_DIR" ROOTFS="$ROOTFS" \
 		DEVICE="$DEVICE" DEVICE_BLOCK="$BLOCK" \
 		BOOT_SIZE_MIB="$BOOT_SIZE_MIB" BOOT_FS="$BOOT_FS" KPART="$KPART" \
+		CONFIRM="${CONFIRM:-}" \
 		"$(readlink -f "$0")" "$@"
 fi
 
@@ -85,6 +89,38 @@ rsync -aHAX --delete \
 	--exclude=/tmp/ --exclude=/var/tmp/ \
 	--exclude=/var/cache/ --exclude=/var/log/journal/ \
 	/ "$MNT"/
+
+# Those excludes are about *contents*, but the directories themselves are part
+# of a root filesystem: they are mount points, and the initramfs's run-init
+# moves its own devtmpfs /dev (plus /proc and /sys) into them before handing
+# over to systemd. rsync drops the excluded directories entirely, so the copy
+# came out without /dev, /proc, /sys, /run, /mnt and /media, and the eMMC
+# mounted its root and then died with "run-init: opening console: No such file
+# or directory" / "Target filesystem doesn't have requested /sbin/init" /
+# "No init found" -- the kernel and the kpart were byte-identical to the card's,
+# which is what made it look like a firmware problem. Ported from debian-aarch64
+# (docs/recon.md 13); the modes are the ones the running system carries.
+for _mp in dev:755 proc:555 sys:555 run:755 mnt:755 media:755; do
+	install -d -m "${_mp#*:}" -o root -g root "$MNT/${_mp%:*}"
+done
+unset _mp
+
+# The copy is a different machine, so it must not inherit the card's identity:
+# a shared machine id means a shared journal and DHCP identity, and shared host
+# keys mean two machines with one SSH identity. Both are blanked the way
+# scripts/lib-dist.sh blanks them for a published artifact -- systemd generates
+# a new id at the first boot, and the image's sshdgenkeys.service (wants= by
+# sshd.service) generates the host keys it is missing.
+: >"$MNT/etc/machine-id"
+rm -f "$MNT"/etc/ssh/ssh_host_*
+
+# A rootfs that cannot be entered must never reach the kernel partition, or the
+# next reboot dies without a console to say why.
+[ -d "$MNT/dev" ] ||
+	die "$MNT/dev missing: run-init could not move devtmpfs into the new root"
+[ -e "$MNT/sbin/init" ] ||
+	die "$MNT/sbin/init missing: the boot would stop with 'No init found'"
+
 disk_layout_fstab "$MNT"
 
 log "Building the kpart for the eMMC root (root=UUID=$ROOT_UUID, kernel $KERNEL_RELEASE)"
@@ -97,7 +133,10 @@ dd if="$KPART.emmc" of="$KPART_PART" bs=1M conv=fsync
 sync
 disk_layout_umount "$MNT"
 
-log "Done. Reboot and remove the microSD to boot from the eMMC."
+log "Done. Reboot and boot the internal disk (the eMMC)."
+log "  This firmware shows a developer-mode menu instead of the Ctrl+D/Ctrl+U screen:"
+log "  'internal disk' is the eMMC, 'external disk' is the microSD. With the card out"
+log "  the internal one is the only choice; with the card in, pick it in the menu."
 log "  After a kernel update on the eMMC system, p1 is rewritten by the boot"
 log "  package's ALPM hook (or: omarchy-google-boot kpart-rewrite)."
 cgpt show "$BLOCK"
