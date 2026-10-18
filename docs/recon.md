@@ -595,13 +595,13 @@ makes it. What changed here, and what forced each change:
 - **`mkfs` gets `-q`, and `partprobe` runs right after the `cgpt add`s**, as
   `format_partition_with_filesystem()` and `install_system_image()` do.
 - **`/etc/fstab` gets pmbootstrap's options**: `defaults` for the root and `nodev,nosuid,noexec` for
-  `/boot`, which is also how the running Nura mounts its `/boot`. The port had `noatime` on both and
-  `errors=remount-ro` on the root; the kernel mounts `defaults` as `relatime`, which is what the
-  `noatime` was for, but dropping `errors=remount-ro` does leave ext4's own `Errors behavior:
-  Continue` (measured with `tune2fs -l` on a fresh `mkfs.ext4`) — the one line of this list that is a
-  behavioural difference rather than a fix, and the images published as v0.1.0 predate it. The pass
-  column stays `0 1`/`0 2`: pmbootstrap writes `0 0` because its init fsck's for itself, while this
-  image has systemd-fsck to order the two.
+  `/boot`, which is also how the running Nura mounts its `/boot`. Two lines differ from the sibling,
+  both deliberately. The root keeps `errors=remount-ro`: pmbootstrap does not set it, and ext4's own
+  default is `Errors behavior: Continue` (measured with `tune2fs -l` on a fresh `mkfs.ext4`), so
+  without it a bad filesystem corrupts in place instead of remounting read-only — the maintainer's
+  call. And the pass column stays `0 1`/`0 2`: pmbootstrap writes `0 0` because its init fsck's for
+  itself, while this image has systemd-fsck to order the two. `noatime` was dropped as the sibling
+  did: the kernel mounts `defaults` as `relatime`, which is what it was there for.
 - **A boot partition below 512 MiB is refused**, as `sanity_check_boot_size()` does. Measured:
   `BOOT_SIZE_MIB=256` dies before a single sector is written.
 - **The kpart's command line is joined with an explicit separator.** `KERNEL_CMDLINE` comes from
@@ -610,6 +610,24 @@ makes it. What changed here, and what forced each change:
   argument depthcharge would hand the kernel as-is; `boot/make-kpart.sh` builds the space itself now.
   `devices/google-asurada/kernel-cmdline.conf` does end with a newline, so here it was latent — in the
   sibling it was live, which is how it was found.
+
+**The same rehearsal found a bug this port had, and the sibling still has: resolving partitions by
+position.** `disk_layout_parts()` took the 2nd, 3rd and 4th lines of `lsblk` — which lists a disk's
+partitions in the order the kernel handed out their minors — and `disk_layout_create()`'s
+`partx -d`/`-a` round, the one that makes the kernel re-read the table it was just given, reorders
+them. Measured over 16 attaches of a 2048 MiB loop: 3 came back as `3 1 2` or `2 1 3`, with no line
+missing, so the old code would have formatted `p2` as the root filesystem and written the kpart into
+`p3`; that is exactly the state the failing rehearsal left behind (`p2` carrying `LABEL="pmOS_root"`
+and `p3` unformatted). It is not the `partprobe` the parity pass added: in an A/B of 8 attaches each,
+the order drifted once with it and twice without it. The function resolves by partition number
+(`PARTN`, never position) and asserts the three `pmOS_*` labels now, so a wrong resolution fails
+loudly instead of formatting or overwriting the wrong partition; 16 of 16 attaches resolve correctly,
+including the two that came back ordered `3 1 2` and `2 1 3`. An image built by `make-image.sh` in
+that state has `pmOS_boot` on p2 and `pmOS_root` on p3, each with its filesystem, and the kpart's
+`root=UUID=` equal to p3's. The sibling's released v0.1.0 was built with the positional code, so
+whatever layout its builds produced hung on that order — worth reporting there. The image this port
+published is not affected: its kpart's `root=UUID=` was checked against p3 at release time, which
+only matches if p3 really carries the root filesystem.
 
 Both refusals, the geometry and the generated fstab were verified off-device, which is all of it that
 can be: `make-image.sh` end to end against a fixture rootfs (the real kernel, initramfs and DTBs, ~35

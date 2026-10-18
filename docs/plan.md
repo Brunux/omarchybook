@@ -519,10 +519,15 @@ markers under `/var/lib/omarchy-google/`, and a second run changes nothing.*
       mounted is refused instead of silently mishandled (`findmnt -rn -S <device>`, never
       `mountpoint -q <device>`, which a device node never satisfies), `mkfs` gets `-q`, `partprobe`
       runs after the `cgpt add`s, the partition below 512 MiB is refused and the fstab uses
-      pmbootstrap's options. Rehearsed on a loop device and by building an image from a fixture
-      rootfs (recon §12). None of this is in v0.1.0: `boot/` ships inside `omarchy-google-boot`, so
-      that package needs a rebuild — and a `pkgrel` bump before it is republished (plan §3 decision
-      7) — before a device gets it.*
+      pmbootstrap's options (`nodev,nosuid,noexec` for `/boot`; the root keeps `errors=remount-ro`,
+      which pmbootstrap does not set, deliberately). Rehearsing it also caught a bug of this port's
+      own: the partitions were resolved by their position in `lsblk`, which the kernel reorders, so 3
+      of 16 attaches pointed the root filesystem at `p2`; that resolution is by partition number and
+      label-checked now (the sibling still has the positional version). Rehearsed on a loop device and
+      by building an image from a fixture rootfs (recon §12). None of this is in v0.1.0: `boot/` ships inside
+      `omarchy-google-boot`, so that package needs a rebuild — and a `pkgrel` bump before it is
+      republished (plan §3 decision 7) — before a device gets it. Deferred to the next rootfs build
+      by the maintainer's call on 2026-10-17.*
 - [x] Port `boot/make-kpart.sh`: `depthchargectl build --board mt8192`, the vboot developer keys,
       hayato's DTB first, no duplicated `kern_guid`, a silent-by-default command line with a
       `KERNEL_CMDLINE_OVERRIDE` escape hatch for verbose boots. *Ported and verified from a built

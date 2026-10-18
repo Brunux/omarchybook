@@ -92,8 +92,10 @@ the patch and the proposal in sync and delete it once merged.
   proven to boot on this machine — and it ships inside the `omarchy-google-boot` package, so a change
   here needs that package rebuilt (and a `pkgrel` bump, plan §3 decision 7) before a device sees it.
   Read recon §12 before changing it: the geometry (`- 33`, not `- 2048`), the mounted-partition
-  refusal (`findmnt -rn -S <device>`, never `mountpoint -q <device>`), the fstab options and the
-  kpart's command-line separator are all deliberate.
+  refusal (`findmnt -rn -S <device>`, never `mountpoint -q <device>`), the partition resolution (by
+  `PARTN`, never by position in `lsblk`), the fstab options (`/boot` gets `nodev,nosuid,noexec`; the
+  root keeps `errors=remount-ro`, which pmbootstrap does not set) and the kpart's command-line
+  separator are all deliberate.
 - Shell scripts run under `set -euo pipefail` on a host whose `du` and `cp` are BusyBox: no GNU-only
   flags (`du_mib`/`file_mib` in `scripts/lib.sh`), and a `cmd | head`/`| grep -q` needs `|| true`
   unless the writer exits on its own (recon §12, §13).

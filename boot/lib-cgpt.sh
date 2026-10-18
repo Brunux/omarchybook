@@ -126,20 +126,36 @@ disk_layout_create() {
 }
 
 # Resolve the partition devices into KPART_PART/BOOT_PART/ROOT_PART.
-# lsblk lists the whole device first, then its partitions: skip the disk line.
-# Resolving the whole disk by mistake would format it, so bail out if the
-# result equals the disk itself.
+#
+# By partition *number*, never by position. `lsblk` lists a disk's partitions in
+# the order the kernel handed out their minors, and that order drifts from the
+# partition numbers after the `partx -d`/`-a` round disk_layout_create() runs to
+# make the kernel re-read the table it was just given. Measured on a loop device:
+# 3 of 16 attaches listed them as `3 1 2` or `2 1 3`, so taking the 2nd, 3rd and
+# 4th line -- which is what this function did -- would have formatted p2 as the
+# root filesystem and written the kpart into p3 (docs/recon.md §12).
+#
+# The labels are asserted for the same reason: a resolution that goes wrong has
+# to fail loudly instead of formatting or overwriting the wrong partition. cgpt
+# writes pmOS_kernel/pmOS_boot/pmOS_root and the rest of the toolchain, the device
+# side included, expects exactly those.
 disk_layout_parts() {
 	_disk="$1"
-	KPART_PART="$(lsblk -nro PATH "$_disk" | sed -n '2p')"
-	BOOT_PART="$(lsblk -nro PATH "$_disk" | sed -n '3p')"
-	ROOT_PART="$(lsblk -nro PATH "$_disk" | sed -n '4p')"
+	KPART_PART="$(lsblk -nro PATH,PARTN "$_disk" | awk '$2 == 1 { print $1; exit }')"
+	BOOT_PART="$(lsblk -nro PATH,PARTN "$_disk" | awk '$2 == 2 { print $1; exit }')"
+	ROOT_PART="$(lsblk -nro PATH,PARTN "$_disk" | awk '$2 == 3 { print $1; exit }')"
 	[ -n "$KPART_PART" ] && [ -n "$BOOT_PART" ] && [ -n "$ROOT_PART" ] ||
 		die "could not resolve partitions on $_disk"
 	for _p in "$KPART_PART" "$BOOT_PART" "$ROOT_PART"; do
 		[ "$_p" != "$_disk" ] ||
 			die "refusing to operate on the whole disk; partition resolution failed for $_disk"
 	done
+	[ "$(lsblk -nro PARTLABEL "$KPART_PART")" = "pmOS_kernel" ] ||
+		die "$KPART_PART is not the pmOS_kernel partition: partition resolution is wrong"
+	[ "$(lsblk -nro PARTLABEL "$BOOT_PART")" = "pmOS_boot" ] ||
+		die "$BOOT_PART is not the pmOS_boot partition: partition resolution is wrong"
+	[ "$(lsblk -nro PARTLABEL "$ROOT_PART")" = "pmOS_root" ] ||
+		die "$ROOT_PART is not the pmOS_root partition: partition resolution is wrong"
 }
 
 # Format and mount the boot and root partitions into <mountpoint>.
@@ -180,13 +196,18 @@ disk_layout_umount() {
 # Options as create_fstab() in pmbootstrap's pmb/install/_install.py writes them:
 # plain "defaults" for the root, nodev,nosuid,noexec for /boot -- which is also
 # how the running Nura system on this machine mounts /boot (docs/recon.md §12).
-# The pass column is the one difference: pmbootstrap writes 0 0 because its own
-# init takes care of fsck, while this image has systemd-fsck, which needs 1 for
-# the root and 2 for the rest to order them.
+# Two things differ, both deliberate:
+#
+#   * the root keeps errors=remount-ro, which pmbootstrap does not set: ext4's
+#     own default is `Errors behavior: Continue` (measured with tune2fs -l on a
+#     fresh mkfs.ext4), so without it a bad filesystem corrupts in place instead
+#     of remounting read-only. The maintainer's call, 2026-10-17.
+#   * the pass column is 0 1 / 0 2: pmbootstrap writes 0 0 because its own init
+#     takes care of fsck, while this image has systemd-fsck to order the two.
 disk_layout_fstab() {
 	_mnt="$1"
 	cat >"$_mnt/etc/fstab" <<EOF
-UUID=$ROOT_UUID	/	ext4	defaults	0 1
+UUID=$ROOT_UUID	/	ext4	defaults,errors=remount-ro	0 1
 UUID=$BOOT_UUID	/boot	$BOOT_FS	nodev,nosuid,noexec	0 2
 EOF
 }
