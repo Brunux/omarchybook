@@ -162,10 +162,19 @@ while read -r patch; do
 	git -C "$OMARCHY_SRC_DIR" apply --index --whitespace=nowarn "$OMARCHY_PATCH_DIR/$patch"
 done < "$OMARCHY_PATCH_DIR/series"
 
-# Rebuild only when the commit or the patch changed; the recipes are pure file
-# copies, so a matching stamp means the published packages already say this.
-stamp="$(printf 'commit=%s\n' "$OMARCHY_COMMIT"
-	git -C "$OMARCHY_SRC_DIR" diff --cached)"
+# Rebuild only when the commit, the patch or a recipe changed. The recipes are
+# not pure file copies: their pkgrel is part of what a machine sees, and a
+# republished package gets a pkgrel bump (docs/recon.md 9, plan §3 decision 8), so
+# a matching stamp has to mean the recipes match too.
+stamp="$(
+	printf 'commit=%s\n' "$OMARCHY_COMMIT"
+	git -C "$OMARCHY_SRC_DIR" diff --cached
+	for recipe in "${RECIPES[@]}"; do
+		printf 'recipe=%s\n' "$recipe"
+		(cd "$OMARCHY_PKGS_DIR/$recipe" &&
+			find . -type f -exec sha256sum {} + | LC_ALL=C sort)
+	done
+)"
 stamp_hash="$(printf '%s' "$stamp" | sha256sum | cut -d' ' -f1)"
 have_all=1
 for recipe in "${RECIPES[@]}"; do

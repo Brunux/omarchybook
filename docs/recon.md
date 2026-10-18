@@ -560,8 +560,12 @@ commits. They are cherry-picked rather than built from master, because the boot 
 `debian-aarch64` — the one verified on this hardware — was built with 0.6.2's semantics, and the ~40
 commits since change FIT construction (`Remove default configuration from FIT image`, verity, TPM).
 `depends` now names `python-packaging`, `dtc`, `vboot-utils` and `uboot-tools`; `python-setuptools`
-stays a makedepend. `pkgrel` stays `1`, as everywhere in `[platform]`: the bundle is content-addressed
-and `build-rootfs.sh` refreshes the cache from it.
+stays a makedepend. `pkgrel` stays `1` here, as it does for everything else `[platform]` ships at
+first: the bundle is content-addressed and `build-rootfs.sh` refreshes the cache from it. A *release*
+that already carries a package and republishes it with new bytes is the exception — that package gets
+a `pkgrel` bump (plan §3 decision 8), and v0.1.1 carries `omarchy-dev` and `omarchy-settings-dev` at
+`pkgrel=2` for exactly that reason. `build-omarchy.sh`'s rebuild stamp therefore hashes the vendored
+recipes along with the commit and the patch: hashing only those two skipped the rebuild a bump needs.
 
 **Verified end to end inside a rebuilt rootfs.** After `scripts/build-rootfs.sh` — which now pulls
 `dtc`, `uboot-tools`, `python-packaging` and `vboot-utils` in through the recipe's dependencies, with
