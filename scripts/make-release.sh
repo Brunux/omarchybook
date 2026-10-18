@@ -1,7 +1,9 @@
 #!/bin/bash
 # Build every asset of one release into a directory:
 #
-#   <device>.img             the disk image (scripts/make-image.sh)
+#   <device>.img             the disk image (scripts/make-image.sh) -- a build
+#                            by-product: it is neither published nor listed in
+#                            SHA256SUMS, only the .xz below is
 #   <device>.img.xz          the same image, compressed for download
 #   <device>-rootfs.tar.zst  the root filesystem as a tarball
 #   <device>.vmlinuz.kpart   the kernel partition that matches the image
@@ -32,6 +34,15 @@
 #     and the public key every image of this port already trusts. It is what
 #     makes an update possible on a device without reflashing (plan Phase 6,
 #     docs/recon.md 9); see its README.
+#   * The build wants about 25 GiB of working disk, because three copies of the
+#     system coexist (the rootfs, the image, and the staging copy lib-dist
+#     sanitizes) before the compressed pair is written. With less, xz or zstd
+#     dies with ENOSPC halfway through the build, and a full disk also stops
+#     tooling that writes its own logs from saying why.
+#   * The image and the tarball come out larger than 2 GiB, the biggest file a
+#     GitHub release accepts, so releases publish them as <2 GiB parts
+#     (`<name>.part-aa`, `.part-ab`, ...). SHA256SUMS hashes the whole file, so
+#     reassembling the parts and checking them is what proves the download.
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 # shellcheck source=../boot/lib-cgpt.sh
@@ -64,9 +75,15 @@ STAGE="$WORK_DIR/release-stage-$DEVICE"
 # is not the checkout's machine in every workflow), so a missing git is a
 # warning and a dirty tree is an error.
 COMMIT=""
+TAG=""
 DIRTY="unknown"
 if command -v git >/dev/null 2>&1 && git -C "$REPO_DIR" rev-parse --git-dir >/dev/null 2>&1; then
 	COMMIT="$(git -C "$REPO_DIR" rev-parse HEAD)"
+	# Both are read here, pinned to the same commit. Asking git for the tag at
+	# the end of the build answered with a HEAD that had moved: a release built
+	# from a tagged commit recorded `tag: none`, which is exactly the field a
+	# reader uses to decide whether to trust the artifact.
+	TAG="$(git -C "$REPO_DIR" describe --tags --exact-match "$COMMIT" 2>/dev/null || true)"
 	if [ -n "$(git -C "$REPO_DIR" status --porcelain)" ]; then
 		DIRTY="yes"
 		if [ "${ALLOW_DIRTY:-}" = "yes" ]; then
@@ -176,7 +193,7 @@ log "Recording what this release was built from"
 	printf 'device:   %s\n' "$DEVICE"
 	printf 'commit:   %s\n' "${COMMIT:-unknown}"
 	printf 'dirty:    %s\n' "$DIRTY"
-	printf 'tag:      %s\n' "$(git -C "$REPO_DIR" describe --tags --exact-match 2>/dev/null || echo none)"
+	printf 'tag:      %s\n' "${TAG:-none}"
 	printf 'date:     %s\n' "$(date -Is)"
 	printf 'channel:  %s\n' "$CHANNEL"
 	printf 'kernel:   %s %s\n' "$KERNEL_PACKAGE" "$KERNEL_RELEASE"
@@ -197,7 +214,11 @@ sed 's/^/  /' "$OUTDIR/RELEASE-INFO.txt"
 log "Checksums"
 (
 	cd "$OUTDIR"
-	sha256sum "$(basename "$IMG")" "$(basename "$IMG").xz" "$(basename "$TARBALL")" \
+	# Only what is published. The uncompressed image is a build by-product and
+	# stays on the build machine, so listing it here made `sha256sum -c` fail
+	# with a missing file for everyone who downloaded the release. Its hash is
+	# the .xz's business: decompressing the .xz is what proves it.
+	sha256sum "$(basename "$IMG").xz" "$(basename "$TARBALL")" \
 		"$(basename "$KPART_OUT")" RELEASE-INFO.txt >SHA256SUMS
 	cat SHA256SUMS
 ) | sed 's/^/  /'

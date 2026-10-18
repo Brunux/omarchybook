@@ -663,13 +663,30 @@ the object is missing: if it fails and `cat-file -e $OMARCHY_COMMIT^{commit}` su
 warns and checks out the copy already in `src/`. The commit is part of the recipe (`lib.sh`), not a
 moving target, so reusing exactly it is what the pinning asked for rather than a shortcut around it.
 
-**What has not been run.** A release built from the real 9.1 GiB rootfs. The build host has 13.0 GiB
-free with the rootfs, the build chroot and the pacman cache in place, and an image that fits that
-rootfs plus its `.xz` needs most of it; `$BUILD_CHROOT/build` (8.5 GiB of makepkg work tree, recon
-§9) is the reclaim the sizes were measured against. So the fixtures exercised the logic and the
-refusals, not the sizes: the release's own disk budget is the first thing Phase 7's build should
-watch. `sgdisk` is also absent from this host (gptfdisk), so `backup-system.sh` warns and records the
-raw GPT dumps only -- a restore onto a disk of the same size works with those, and the portable
+**The real release was run, and the disk budget it needs is measured now.** v0.1.0 was built from the
+real 9.7 GiB rootfs, and the estimate above was optimistic. What the build actually holds at once:
+the rootfs 9.7 GiB, the image 11.8 GiB apparent (9.6 GiB allocated), the staging copy `lib-dist.sh`
+sanitizes 9.5 GiB, the `.xz` 2.5 GiB and the rootfs tarball 3.0 GiB -- three copies of the system
+before the compressed pair exists, about 25 GiB of working disk rather than the 13 GiB the host had.
+The first attempt died exactly there, `zstd: error 70 : Write error : cannot write block` at 2.2 GB
+into the tarball, and a full disk also stops the tooling that records a failure from writing why, so
+space had to be freed before the reason could be read. `$BUILD_CHROOT` (4.9 GiB) and the pacman cache
+(2.8 GiB, recon §9) are the reclaim: both are rebuilt by the next rootfs build.
+
+**Two of the assets are larger than any release host takes.** GitHub refuses a file of 2 GiB or more,
+and both the image and the rootfs tarball are over it -- the tarball was already past 2.2 GB when it
+ran out of disk. The release therefore publishes them in parts, `<name>.part-aa`, `.part-ab`, cut at
+1800 MiB with `split -b 1887436800` (BusyBox `split` takes bytes: `-b 2M` is "invalid number").
+`SHA256SUMS` hashes the whole file, so `cat <name>.part-* > <name> && sha256sum -c SHA256SUMS` is
+what proves a part is neither missing nor corrupt. The raw `.img` is not published and is no longer
+listed in `SHA256SUMS`: hashing a file nobody can download made the check fail for everyone who did.
+
+**A tagged build recorded `tag: none`.** `RELEASE-INFO.txt` read the commit at the start of the build
+and the tag at the end, so a commit made during the 40-minute build moved HEAD out from under the
+`git describe --exact-match`. Both are now read together, pinned to the same commit.
+
+**Still not run on this host.** `sgdisk` is absent (gptfdisk), so `backup-system.sh` warns and records
+the raw GPT dumps only -- a restore onto a disk of the same size works with those, and the portable
 `<host>-gpt.bin` (the way onto a different disk) needs the package installed.
 
 ## 14. The health report, and what it had to learn about the port (Phase 7)

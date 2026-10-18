@@ -14,7 +14,10 @@ What belongs in it:
   `xz -dc … | sudo dd of=<card> bs=4M conv=fsync`), `<device>-rootfs.tar.zst` (write a card from an
   extracted copy with `sudo ROOTFS=<dir> scripts/write-sd.sh <card>`),
   `<device>.vmlinuz.kpart` (the kernel partition of *that* image), and `platform/` (the bundle as a
-  repository; see its own README).
+  repository; see its own README). When a file is over 2 GiB — the largest a file in a GitHub release
+  may be, and both large ones are — it ships as `<name>.part-aa`, `.part-ab`, and so on, and the
+  notes say how to reassemble it and that `SHA256SUMS` holds the hash of the whole file, which is
+  what catches a part that came down short.
 - **How a machine already running this port updates.** With the release's `platform/` served
   somewhere and `[platform] Server = <url>` in `/etc/pacman.conf`, `sudo pacman -Sy && sudo pacman -Su`.
   Without that line the image has no repository for its own kernel or platform packages at all, and
